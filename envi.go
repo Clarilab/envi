@@ -3,8 +3,27 @@ package envi
 import "os"
 
 // LoadEnvVars loads the given Environment Variables.
+// All Vars are required.
+func LoadEnvVars(required []string) (loadedVars map[string]string, err error) {
+	loadedVars = make(map[string]string)
+
+	for _, key := range required {
+		loadedVars[key] = os.Getenv(key)
+	}
+
+	missingVars := listMissing(loadedVars)
+	if len(missingVars) > 0 {
+		err = &RequiredEnvVarsMissing{MissingVars: missingVars}
+
+		return
+	}
+
+	return
+}
+
+// LoadEnvVarsWithOptional loads the given Environment Variables.
 // These are seperated into required and optional Vars.
-func LoadEnvVars(required, optional []string) (loadedVars map[string]string, err error) {
+func LoadEnvVarsWithOptional(required, optional []string) (loadedVars map[string]string, err error) {
 	loadedVars = make(map[string]string)
 
 	for _, key := range required {
