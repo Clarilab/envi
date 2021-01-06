@@ -1,6 +1,38 @@
 package envi
 
-import "os"
+import (
+	"encoding/json"
+	"io/ioutil"
+	"os"
+)
+
+// LoadFromSecretFile parses a json file to load all mappings
+// fileName is optional
+// default value is ./secretFile
+func LoadFromSecretFile(fileName ...string) error {
+	path := "./secretFile"
+
+	if fileName != nil {
+		path = fileName[0]
+	}
+
+	data, err := ioutil.ReadFile(path)
+	if err != nil {
+		return err
+	}
+
+	var mappings map[string]string
+	err = json.Unmarshal(data, &mappings)
+	if err != nil {
+		return err
+	}
+
+	for key, value := range mappings {
+		os.Setenv(key, value)
+	}
+
+	return nil
+}
 
 // LoadEnvVars loads the given Environment Variables.
 // All Vars are required.
