@@ -4,12 +4,14 @@ import (
 	"encoding/json"
 	"io/ioutil"
 	"os"
+
+	"github.com/pkg/errors"
 )
 
-// LoadFromSecretFile parses a json file to load all mappings
+// LoadConfig parses a file to load all Mappings and returns the data as map[string]string
 // fileName is optional
 // default value is ./secretFile
-func LoadFromSecretFile(fileName ...string) error {
+func LoadConfig(fileName ...string) (map[string]string, error) {
 	path := "./secretFile"
 
 	if fileName != nil {
@@ -18,13 +20,24 @@ func LoadFromSecretFile(fileName ...string) error {
 
 	data, err := ioutil.ReadFile(path)
 	if err != nil {
-		return err
+		return nil, errors.Wrap(err, "can not read file")
 	}
 
 	var mappings map[string]string
 	err = json.Unmarshal(data, &mappings)
 	if err != nil {
-		return err
+		return nil, errors.Wrap(err, "can not unmarshal data")
+	}
+	return mappings, nil
+}
+
+// LoadFromSecretFile parses a json file to load all mappings
+// fileName is optional
+// default value is ./secretFile
+func LoadFromSecretFile(fileName ...string) error {
+	mappings, err := LoadConfig(fileName...)
+	if err != nil {
+		return errors.Wrap(err, "can not load config")
 	}
 
 	for key, value := range mappings {
