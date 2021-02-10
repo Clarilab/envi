@@ -1,6 +1,9 @@
 package envi
 
-import "testing"
+import (
+	"os"
+	"testing"
+)
 
 func Test_LoadEnvVars_Empty(t *testing.T) {
 	loadedVars, err := LoadEnvVars([]string{})
@@ -106,5 +109,39 @@ func Test_LoadEnvVarsWithOptional_MissingRequired(t *testing.T) {
 
 	if err == nil {
 		t.Error("No Error was given while missing an required Environment Variable.")
+	}
+}
+
+func Test_LoadConfig(t *testing.T) {
+	const testFile = "test/test.json"
+
+	config, err := LoadConfig(testFile)
+	if err != nil {
+		t.Error("Can not load File")
+	}
+
+	if config["Olaf"] != "Schnur" {
+		t.Error("Schnur was expected to set as value of Olaf")
+	}
+
+	if config["HOME"] != "HOME" {
+		t.Error("HOME was expected to set as value of HOME")
+	}
+}
+
+func Test_LoadFromSecretFile(t *testing.T) {
+	const testFile = "test/test.json"
+
+	err := LoadFromSecretFile(testFile)
+	if err != nil {
+		t.Error("Can not load File")
+	}
+
+	if os.Getenv("Olaf") != "Schnur" {
+		t.Error("Schnur was expected to set as Environment Variable.")
+	}
+
+	if os.Getenv("HOME") != "HOME" {
+		t.Error("HOME was expected to set as Environment Variable.")
 	}
 }
