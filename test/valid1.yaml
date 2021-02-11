@@ -1,0 +1,3 @@
+SHELL: csh
+PAGER: more
+CALC: bc

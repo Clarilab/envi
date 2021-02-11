@@ -6,95 +6,148 @@ import (
 	"os"
 
 	"github.com/pkg/errors"
+	"gopkg.in/yaml.v2"
 )
 
-// LoadConfig parses a file to load all Mappings and returns the data as map[string]string
-// fileName is optional
-// default value is ./secretFile
-func LoadConfig(fileName ...string) (map[string]string, error) {
-	path := "./secretFile"
+type Envi interface {
+	// FromMap loads the given key-value pairs and loads them into the local map.
+	FromMap(map[string]string)
 
-	if fileName != nil {
-		path = fileName[0]
-	}
+	// LoadEnv loads the given keys from environment.
+	LoadEnv(vars ...string)
 
-	data, err := ioutil.ReadFile(path)
-	if err != nil {
-		return nil, errors.Wrap(err, "can not read file")
-	}
+	// LoadJSON loads key-value pairs from one or many json blobs.
+	LoadJSON(...[]byte) error
 
-	var mappings map[string]string
-	err = json.Unmarshal(data, &mappings)
-	if err != nil {
-		return nil, errors.Wrap(err, "can not unmarshal data")
-	}
-	return mappings, nil
+	// LoadJSONFiles loads key-value pairs from one or more json files.
+	LoadJSONFiles(...string) error
+
+	// LoadYAML loads key-value pairs from one or many yaml blobs.
+	LoadYAML(...[]byte) error
+
+	// LoadYAMLFiles loads key-value pairs from one or more yaml files.
+	LoadYAMLFiles(...string) error
+
+	// EnsureVars checks, if all given keys have a non-empty value.
+	EnsureVars(...string) error
+
+	// ToEnv writes all key-value pairs to the environment.
+	ToEnv()
+
+	// ToMap returns a map, containing all key-value pairs.
+	ToMap() map[string]string
 }
 
-// LoadFromSecretFile parses a json file to load all mappings
-// fileName is optional
-// default value is ./secretFile
-func LoadFromSecretFile(fileName ...string) error {
-	mappings, err := LoadConfig(fileName...)
-	if err != nil {
-		return errors.Wrap(err, "can not load config")
-	}
+type envi struct {
+	loadedVars map[string]string
+}
 
-	for key, value := range mappings {
-		os.Setenv(key, value)
+func NewEnvi() Envi {
+	return &envi{
+		loadedVars: make(map[string]string),
+	}
+}
+
+func (envi *envi) FromMap(vars map[string]string) {
+	for key := range vars {
+		envi.loadedVars[key] = vars[key]
+	}
+}
+
+func (envi *envi) LoadEnv(vars ...string) {
+	for _, key := range vars {
+		envi.loadedVars[key] = os.Getenv(key)
+	}
+}
+
+func (envi *envi) LoadJSONFiles(paths ...string) error {
+	for i := range paths {
+		blob, err := ioutil.ReadFile(paths[i])
+		if err != nil {
+			return errors.Wrapf(err, "failed to read json file '%s'", paths[i])
+		}
+
+		err = envi.LoadJSON(blob)
+		if err != nil {
+			return errors.Wrapf(err, "failed to load json file '%s'", paths[i])
+		}
 	}
 
 	return nil
 }
 
-// LoadEnvVars loads the given Environment Variables.
-// All Vars are required.
-func LoadEnvVars(required []string) (loadedVars map[string]string, err error) {
-	loadedVars = make(map[string]string)
+func (envi *envi) LoadJSON(blobs ...[]byte) error {
+	for i := range blobs {
+		var decoded map[string]string
 
-	for _, key := range required {
-		loadedVars[key] = os.Getenv(key)
-	}
+		err := json.Unmarshal(blobs[i], &decoded)
+		if err != nil {
+			return errors.Wrap(err, "failed to unmarshal json")
+		}
 
-	missingVars := listMissing(loadedVars)
-	if len(missingVars) > 0 {
-		err = &RequiredEnvVarsMissing{MissingVars: missingVars}
-
-		return
-	}
-
-	return
-}
-
-// LoadEnvVarsWithOptional loads the given Environment Variables.
-// These are seperated into required and optional Vars.
-func LoadEnvVarsWithOptional(required, optional []string) (loadedVars map[string]string, err error) {
-	loadedVars = make(map[string]string)
-
-	for _, key := range required {
-		loadedVars[key] = os.Getenv(key)
-	}
-
-	missingVars := listMissing(loadedVars)
-	if len(missingVars) > 0 {
-		err = &RequiredEnvVarsMissing{MissingVars: missingVars}
-
-		return
-	}
-
-	for _, key := range optional {
-		loadedVars[key] = os.Getenv(key)
-	}
-
-	return
-}
-
-func listMissing(vars map[string]string) (missing []string) {
-	for key, value := range vars {
-		if value == "" {
-			missing = append(missing, key)
+		for key := range decoded {
+			envi.loadedVars[key] = decoded[key]
 		}
 	}
 
-	return
+	return nil
+}
+
+func (envi *envi) LoadYAMLFiles(paths ...string) error {
+	for i := range paths {
+		blob, err := ioutil.ReadFile(paths[i])
+		if err != nil {
+			return errors.Wrapf(err, "failed to read yaml file '%s'", paths[i])
+		}
+
+		err = envi.LoadYAML(blob)
+		if err != nil {
+			return errors.Wrapf(err, "failed to load yaml file '%s'", paths[i])
+		}
+	}
+
+	return nil
+}
+
+func (envi *envi) LoadYAML(blobs ...[]byte) error {
+	for i := range blobs {
+		var decoded map[string]string
+
+		err := yaml.Unmarshal(blobs[i], &decoded)
+		if err != nil {
+			return errors.Wrap(err, "failed to unmarshal yaml")
+		}
+
+		for key := range decoded {
+			envi.loadedVars[key] = decoded[key]
+		}
+	}
+
+	return nil
+}
+
+func (envi *envi) EnsureVars(requiredVars ...string) error {
+	var missingVars []string
+
+	for _, key := range requiredVars {
+		if envi.loadedVars[key] == "" {
+			missingVars = append(missingVars, key)
+		}
+	}
+
+	if len(missingVars) > 0 {
+		return &RequiredEnvVarsMissing{MissingVars: missingVars}
+	}
+
+	return nil
+}
+
+func (envi *envi) ToEnv() {
+	for key := range envi.loadedVars {
+		os.Setenv(key, envi.loadedVars[key])
+	}
+}
+
+func (envi *envi) ToMap() map[string]string {
+	return envi.loadedVars
 }
