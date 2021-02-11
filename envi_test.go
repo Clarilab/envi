@@ -3,145 +3,170 @@ package envi
 import (
 	"os"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
-func Test_LoadEnvVars_Empty(t *testing.T) {
-	loadedVars, err := LoadEnvVars([]string{})
-	if err != nil {
-		t.Error(err)
-	}
+func Test_FromMap(t *testing.T) {
+	payload := make(map[string]string)
+	payload["EDITOR"] = "vim"
+	payload["PAGER"] = "less"
 
-	if len(loadedVars) != 0 {
-		t.Fail()
-	}
+	e := NewEnvi()
+	e.FromMap(payload)
+
+	assert.Len(t, e.ToMap(), 2)
 }
 
-func Test_LoadEnvVars_Nil(t *testing.T) {
-	loadedVars, err := LoadEnvVars(nil)
-	if err != nil {
-		t.Error(err)
-	}
+func Test_LoadEnv(t *testing.T) {
+	e := NewEnvi()
+	e.LoadEnv("EDITOR", "PAGER", "HOME")
 
-	if len(loadedVars) != 0 {
-		t.Fail()
-	}
+	assert.Len(t, e.ToMap(), 3)
 }
 
-func Test_LoadEnvVars_All(t *testing.T) {
-	required := []string{"EDITOR", "HOME"}
+func Test_LoadJSONFromFile(t *testing.T) {
+	t.Run("no file", func(t *testing.T) {
+		e := NewEnvi()
+		err := e.LoadJSONFiles()
 
-	loadedVars, err := LoadEnvVars(required)
-	if err != nil {
-		t.Error(err)
-	}
+		assert.NoError(t, err)
+		assert.Len(t, e.ToMap(), 0)
+	})
 
-	if loadedVars["EDITOR"] == "" {
-		t.Error("EDITOR was not set, but expected.")
-	}
+	t.Run("a valid json file", func(t *testing.T) {
+		e := NewEnvi()
+		err := e.LoadJSONFiles("test/valid1.json")
 
-	if loadedVars["HOME"] == "" {
-		t.Error("HOME was not set, but expected.")
-	}
+		assert.NoError(t, err)
+		assert.Len(t, e.ToMap(), 3)
+	})
+
+	t.Run("2 valid json files", func(t *testing.T) {
+		e := NewEnvi()
+		err := e.LoadJSONFiles("test/valid1.json", "test/valid2.json")
+
+		assert.NoError(t, err)
+		assert.Len(t, e.ToMap(), 4)
+	})
+
+	t.Run("an invalid json file", func(t *testing.T) {
+		e := NewEnvi()
+		err := e.LoadJSONFiles("test/invalid.json")
+
+		assert.Error(t, err)
+	})
+
+	t.Run("a missing file", func(t *testing.T) {
+		e := NewEnvi()
+		err := e.LoadJSONFiles("test/idontexist.json")
+
+		assert.Error(t, err)
+	})
 }
 
-func Test_LoadEnvVars_Missing(t *testing.T) {
-	required := []string{"EDITOR", "HOME", "SCHNURZLPUTZ"}
+func Test_LoadYAMLFomFile(t *testing.T) {
+	t.Run("no file", func(t *testing.T) {
+		e := NewEnvi()
+		err := e.LoadYAMLFiles()
 
-	loadedVars, err := LoadEnvVars(required)
-	if loadedVars != nil && loadedVars["SCHNURZLPUTZ"] != "" {
-		t.Error("SCHNURZLPUTZ was expected to be not set as Environment Variable.")
-	}
+		assert.NoError(t, err)
+		assert.Len(t, e.ToMap(), 0)
+	})
 
-	if err == nil {
-		t.Error("No Error was given while missing an required Environment Variable.")
-	}
+	t.Run("a valid yaml file", func(t *testing.T) {
+		e := NewEnvi()
+		err := e.LoadYAMLFiles("test/valid1.yaml")
+
+		assert.NoError(t, err)
+		assert.Len(t, e.ToMap(), 3)
+	})
+
+	t.Run("2 valid yaml files", func(t *testing.T) {
+		e := NewEnvi()
+		err := e.LoadYAMLFiles("test/valid1.yaml", "test/valid2.yaml")
+
+		assert.NoError(t, err)
+		assert.Len(t, e.ToMap(), 4)
+	})
+
+	t.Run("an invalid yaml file", func(t *testing.T) {
+		e := NewEnvi()
+		err := e.LoadYAMLFiles("test/invalid.yaml")
+
+		assert.Error(t, err)
+	})
+
+	t.Run("a missing file", func(t *testing.T) {
+		e := NewEnvi()
+		err := e.LoadYAMLFiles("test/idontexist.yaml")
+
+		assert.Error(t, err)
+	})
 }
 
-func Test_LoadEnvVarsWithOptional_Empty(t *testing.T) {
+func Test_EnsureVars(t *testing.T) {
+	t.Run("all ensured vars are present", func(t *testing.T) {
+		payload := make(map[string]string)
+		payload["EDITOR"] = "vim"
+		payload["PAGER"] = "less"
 
-	loadedVars, err := LoadEnvVarsWithOptional([]string{}, []string{})
-	if err != nil {
-		t.Error(err)
-	}
+		e := NewEnvi()
+		e.FromMap(payload)
 
-	if len(loadedVars) != 0 {
-		t.Fail()
-	}
+		err := e.EnsureVars("EDITOR", "PAGER")
+
+		assert.NoError(t, err)
+	})
+
+	t.Run("one ensured var is missing", func(t *testing.T) {
+		payload := make(map[string]string)
+		payload["EDITOR"] = "vim"
+		payload["PAGER"] = "less"
+
+		e := NewEnvi()
+		e.FromMap(payload)
+
+		err := e.EnsureVars("EDITOR", "PAGER", "HOME")
+
+		assert.Error(t, err)
+	})
+
+	t.Run("all ensured vars are missing", func(t *testing.T) {
+		payload := make(map[string]string)
+		payload["EDITOR"] = "vim"
+		payload["PAGER"] = "less"
+
+		e := NewEnvi()
+		e.FromMap(payload)
+
+		err := e.EnsureVars("HOME", "MAIL", "URL")
+
+		assert.Error(t, err)
+	})
 }
 
-func Test_LoadEnvVarsWithOptional_OnlyOptional(t *testing.T) {
-	optional := []string{"SCHNURZLPUTZ"}
+func Test_ToEnv(t *testing.T) {
+	payload := make(map[string]string)
+	payload["SCHURZLPURZ"] = "yes, indeed"
 
-	loadedVars, err := LoadEnvVarsWithOptional([]string{}, optional)
-	if err != nil {
-		t.Error(err)
-	}
+	e := NewEnvi()
+	e.FromMap(payload)
 
-	if loadedVars["SCHNURZLPUTZ"] != "" {
-		t.Error("Didn't expect SCHNURZLPUTZ to be set.")
-	}
+	e.ToEnv()
+
+	assert.Equal(t, "yes, indeed", os.Getenv("SCHURZLPURZ"))
 }
 
-func Test_LoadEnvVarsWithOptional_OnlyRequired(t *testing.T) {
-	required := []string{"EDITOR", "HOME"}
+func Test_ToMap(t *testing.T) {
+	payload := make(map[string]string)
+	payload["EDITOR"] = "vim"
+	payload["PAGER"] = "less"
 
-	loadedVars, err := LoadEnvVarsWithOptional(required, []string{})
-	if err != nil {
-		t.Error(err)
-	}
+	e := NewEnvi()
+	e.FromMap(payload)
 
-	if loadedVars["EDITOR"] == "" {
-		t.Error("EDITOR was not set, but expected.")
-	}
+	vars := e.ToMap()
 
-	if loadedVars["HOME"] == "" {
-		t.Error("HOME was not set, but expected.")
-	}
-}
-
-func Test_LoadEnvVarsWithOptional_MissingRequired(t *testing.T) {
-	required := []string{"EDITOR", "HOME", "SCHNURZLPUTZ"}
-
-	loadedVars, err := LoadEnvVarsWithOptional(required, []string{})
-	if loadedVars != nil && loadedVars["SCHNURZLPUTZ"] != "" {
-		t.Error("SCHNURZLPUTZ was expected to be not set as Environment Variable.")
-	}
-
-	if err == nil {
-		t.Error("No Error was given while missing an required Environment Variable.")
-	}
-}
-
-func Test_LoadConfig(t *testing.T) {
-	const testFile = "test/test.json"
-
-	config, err := LoadConfig(testFile)
-	if err != nil {
-		t.Error("Can not load File")
-	}
-
-	if config["Olaf"] != "Schnur" {
-		t.Error("Schnur was expected to set as value of Olaf")
-	}
-
-	if config["HOME"] != "HOME" {
-		t.Error("HOME was expected to set as value of HOME")
-	}
-}
-
-func Test_LoadFromSecretFile(t *testing.T) {
-	const testFile = "test/test.json"
-
-	err := LoadFromSecretFile(testFile)
-	if err != nil {
-		t.Error("Can not load File")
-	}
-
-	if os.Getenv("Olaf") != "Schnur" {
-		t.Error("Schnur was expected to set as Environment Variable.")
-	}
-
-	if os.Getenv("HOME") != "HOME" {
-		t.Error("HOME was expected to set as Environment Variable.")
-	}
+	assert.Len(t, vars, 2)
 }
