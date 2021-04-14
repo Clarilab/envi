@@ -22,6 +22,9 @@ type Envi interface {
 	// LoadEnv loads the given keys from environment.
 	LoadEnv(vars ...string)
 
+	// LoadFile loads a string value under given key from a file.
+	LoadFile(key, filePath string) error
+
 	// LoadJSON loads key-value pairs from one or many json blobs.
 	LoadJSON(...[]byte) error
 

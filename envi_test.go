@@ -2,6 +2,7 @@ package envi
 
 import (
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -36,7 +37,7 @@ func Test_LoadJSONFromFile(t *testing.T) {
 
 	t.Run("a valid json file", func(t *testing.T) {
 		e := NewEnvi()
-		err := e.LoadJSONFiles("test/valid1.json")
+		err := e.LoadJSONFiles("testdata/valid1.json")
 
 		assert.NoError(t, err)
 		assert.Len(t, e.ToMap(), 3)
@@ -44,7 +45,7 @@ func Test_LoadJSONFromFile(t *testing.T) {
 
 	t.Run("2 valid json files", func(t *testing.T) {
 		e := NewEnvi()
-		err := e.LoadJSONFiles("test/valid1.json", "test/valid2.json")
+		err := e.LoadJSONFiles("testdata/valid1.json", "testdata/valid2.json")
 
 		assert.NoError(t, err)
 		assert.Len(t, e.ToMap(), 4)
@@ -52,14 +53,14 @@ func Test_LoadJSONFromFile(t *testing.T) {
 
 	t.Run("an invalid json file", func(t *testing.T) {
 		e := NewEnvi()
-		err := e.LoadJSONFiles("test/invalid.json")
+		err := e.LoadJSONFiles("testdata/invalid.json")
 
 		assert.Error(t, err)
 	})
 
 	t.Run("a missing file", func(t *testing.T) {
 		e := NewEnvi()
-		err := e.LoadJSONFiles("test/idontexist.json")
+		err := e.LoadJSONFiles("testdata/idontexist.json")
 
 		assert.Error(t, err)
 	})
@@ -76,7 +77,7 @@ func Test_LoadYAMLFomFile(t *testing.T) {
 
 	t.Run("a valid yaml file", func(t *testing.T) {
 		e := NewEnvi()
-		err := e.LoadYAMLFiles("test/valid1.yaml")
+		err := e.LoadYAMLFiles("testdata/valid1.yaml")
 
 		assert.NoError(t, err)
 		assert.Len(t, e.ToMap(), 3)
@@ -84,7 +85,7 @@ func Test_LoadYAMLFomFile(t *testing.T) {
 
 	t.Run("2 valid yaml files", func(t *testing.T) {
 		e := NewEnvi()
-		err := e.LoadYAMLFiles("test/valid1.yaml", "test/valid2.yaml")
+		err := e.LoadYAMLFiles("testdata/valid1.yaml", "testdata/valid2.yaml")
 
 		assert.NoError(t, err)
 		assert.Len(t, e.ToMap(), 4)
@@ -92,14 +93,14 @@ func Test_LoadYAMLFomFile(t *testing.T) {
 
 	t.Run("an invalid yaml file", func(t *testing.T) {
 		e := NewEnvi()
-		err := e.LoadYAMLFiles("test/invalid.yaml")
+		err := e.LoadYAMLFiles("testdata/invalid.yaml")
 
 		assert.Error(t, err)
 	})
 
 	t.Run("a missing file", func(t *testing.T) {
 		e := NewEnvi()
-		err := e.LoadYAMLFiles("test/idontexist.yaml")
+		err := e.LoadYAMLFiles("testdata/idontexist.yaml")
 
 		assert.Error(t, err)
 	})
@@ -169,4 +170,23 @@ func Test_ToMap(t *testing.T) {
 	vars := e.ToMap()
 
 	assert.Len(t, vars, 2)
+}
+
+func Test_LoadFile(t *testing.T) {
+	t.Run("no file", func(t *testing.T) {
+		e := NewEnvi()
+		err := e.LoadFile("FILE", "")
+
+		assert.Error(t, err)
+		assert.Len(t, e.ToMap(), 0)
+	})
+
+	t.Run("file with string content", func(t *testing.T) {
+		e := NewEnvi()
+		err := e.LoadFile("FILE", filepath.Join("testdata/valid.txt"))
+
+		assert.NoError(t, err)
+		assert.Len(t, e.ToMap(), 1)
+		assert.Equal(t, "valid string", e.ToMap()["FILE"])
+	})
 }

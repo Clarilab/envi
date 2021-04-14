@@ -16,8 +16,8 @@ type Envi interface {
 	// LoadEnv loads the given keys from environment.
 	LoadEnv(vars ...string)
 
-	// LoadStringFromFile loads a string value under given key from a file.
-	LoadStringFromFile(key, filePath string) error
+	// LoadFile loads a string value under given key from a file.
+	LoadFile(key, filePath string) error
 
 	// LoadJSON loads key-value pairs from one or many json blobs.
 	LoadJSON(...[]byte) error
@@ -63,7 +63,7 @@ func (envi *envi) LoadEnv(vars ...string) {
 	}
 }
 
-func (envi *envi) LoadStringFromFile(key, filePath string) error {
+func (envi *envi) LoadFile(key, filePath string) error {
 	blob, err := ioutil.ReadFile(filePath)
 	if err != nil {
 		return errors.Wrapf(err, "failed to read file '%s'", filePath)
