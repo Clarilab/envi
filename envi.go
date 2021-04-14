@@ -16,6 +16,9 @@ type Envi interface {
 	// LoadEnv loads the given keys from environment.
 	LoadEnv(vars ...string)
 
+	// LoadFile loads a string value under given key from a file.
+	LoadFile(key, filePath string) error
+
 	// LoadJSON loads key-value pairs from one or many json blobs.
 	LoadJSON(...[]byte) error
 
@@ -58,6 +61,17 @@ func (envi *envi) LoadEnv(vars ...string) {
 	for _, key := range vars {
 		envi.loadedVars[key] = os.Getenv(key)
 	}
+}
+
+func (envi *envi) LoadFile(key, filePath string) error {
+	blob, err := ioutil.ReadFile(filePath)
+	if err != nil {
+		return errors.Wrapf(err, "failed to read file '%s'", filePath)
+	}
+
+	envi.loadedVars[key] = string(blob)
+
+	return nil
 }
 
 func (envi *envi) LoadJSONFiles(paths ...string) error {
