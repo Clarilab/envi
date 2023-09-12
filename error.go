@@ -17,3 +17,13 @@ func (e *RequiredEnvVarsMissing) Error() string {
 func (e *RequiredEnvVarsMissing) printMissingVars() string {
 	return strings.Join(e.MissingVars, ", ")
 }
+
+// ErrEnvVarNotFound says, that a given Environment Variable is not found.
+type ErrEnvVarNotFound struct {
+	variable string
+}
+
+// Error implements the error interface.
+func (e *ErrEnvVarNotFound) Error() string {
+	return fmt.Sprintf("environment variable %s not found", e.variable)
+}

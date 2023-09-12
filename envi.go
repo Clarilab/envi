@@ -2,7 +2,7 @@ package envi
 
 import (
 	"encoding/json"
-	"io/ioutil"
+	"fmt"
 	"os"
 
 	"github.com/pkg/errors"
@@ -63,8 +63,59 @@ func (envi *envi) LoadEnv(vars ...string) {
 	}
 }
 
+func (envi *envi) LoadYAMLFilesFromEnvPaths(vars ...string) error {
+	const errMessage = "failed to load yaml files from env paths: %w"
+	for _, key := range vars {
+		path := os.Getenv(key)
+
+		if path == "" {
+			return fmt.Errorf(errMessage, &ErrEnvVarNotFound{key})
+		}
+
+		if err := envi.LoadYAMLFile(path); err != nil {
+			return fmt.Errorf(errMessage, err)
+		}
+	}
+
+	return nil
+}
+
+func (envi *envi) LoadJSONFilesFromEnvPaths(vars ...string) error {
+	const errMessage = "failed to load json files from env paths: %w"
+
+	for _, key := range vars {
+		path := os.Getenv(key)
+
+		if path == "" {
+			return fmt.Errorf(errMessage, &ErrEnvVarNotFound{key})
+		}
+
+		if err := envi.LoadJSONFile(path); err != nil {
+			return errors.Wrapf(err, "failed to read file '%s'", path)
+		}
+	}
+
+	return nil
+}
+
+func (envi *envi) LoadFileFromEnvPath(key string, envPath string) error {
+	const errMessage = "failed to load file from env paths: %w"
+
+	filePath := os.Getenv(envPath)
+
+	if filePath == "" {
+		return fmt.Errorf(errMessage, &ErrEnvVarNotFound{envPath})
+	}
+
+	if err := envi.LoadFile(key, filePath); err != nil {
+		return fmt.Errorf(errMessage, err)
+	}
+
+	return nil
+}
+
 func (envi *envi) LoadFile(key, filePath string) error {
-	blob, err := ioutil.ReadFile(filePath)
+	blob, err := os.ReadFile(filePath)
 	if err != nil {
 		return errors.Wrapf(err, "failed to read file '%s'", filePath)
 	}
@@ -76,15 +127,23 @@ func (envi *envi) LoadFile(key, filePath string) error {
 
 func (envi *envi) LoadJSONFiles(paths ...string) error {
 	for i := range paths {
-		blob, err := ioutil.ReadFile(paths[i])
-		if err != nil {
+		if err := envi.LoadJSONFile(paths[i]); err != nil {
 			return errors.Wrapf(err, "failed to read json file '%s'", paths[i])
 		}
+	}
 
-		err = envi.LoadJSON(blob)
-		if err != nil {
-			return errors.Wrapf(err, "failed to load json file '%s'", paths[i])
-		}
+	return nil
+}
+
+func (envi *envi) LoadJSONFile(path string) error {
+	blob, err := os.ReadFile(path)
+	if err != nil {
+		return errors.Wrapf(err, "failed to read json file '%s'", path)
+	}
+
+	err = envi.LoadJSON(blob)
+	if err != nil {
+		return errors.Wrapf(err, "failed to load json file '%s'", path)
 	}
 
 	return nil
@@ -109,15 +168,23 @@ func (envi *envi) LoadJSON(blobs ...[]byte) error {
 
 func (envi *envi) LoadYAMLFiles(paths ...string) error {
 	for i := range paths {
-		blob, err := ioutil.ReadFile(paths[i])
-		if err != nil {
+		if err := envi.LoadYAMLFile(paths[i]); err != nil {
 			return errors.Wrapf(err, "failed to read yaml file '%s'", paths[i])
 		}
+	}
 
-		err = envi.LoadYAML(blob)
-		if err != nil {
-			return errors.Wrapf(err, "failed to load yaml file '%s'", paths[i])
-		}
+	return nil
+}
+
+func (envi *envi) LoadYAMLFile(path string) error {
+	blob, err := os.ReadFile(path)
+	if err != nil {
+		return errors.Wrapf(err, "failed to read yaml file '%s'", path)
+	}
+
+	err = envi.LoadYAML(blob)
+	if err != nil {
+		return errors.Wrapf(err, "failed to load yaml file '%s'", path)
 	}
 
 	return nil
