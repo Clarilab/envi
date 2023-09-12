@@ -9,61 +9,33 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
-type Envi interface {
-	// FromMap loads the given key-value pairs and loads them into the local map.
-	FromMap(map[string]string)
-
-	// LoadEnv loads the given keys from environment.
-	LoadEnv(vars ...string)
-
-	// LoadFile loads a string value under given key from a file.
-	LoadFile(key, filePath string) error
-
-	// LoadJSON loads key-value pairs from one or many json blobs.
-	LoadJSON(...[]byte) error
-
-	// LoadJSONFiles loads key-value pairs from one or more json files.
-	LoadJSONFiles(...string) error
-
-	// LoadYAML loads key-value pairs from one or many yaml blobs.
-	LoadYAML(...[]byte) error
-
-	// LoadYAMLFiles loads key-value pairs from one or more yaml files.
-	LoadYAMLFiles(...string) error
-
-	// EnsureVars checks, if all given keys have a non-empty value.
-	EnsureVars(...string) error
-
-	// ToEnv writes all key-value pairs to the environment.
-	ToEnv()
-
-	// ToMap returns a map, containing all key-value pairs.
-	ToMap() map[string]string
-}
-
-type envi struct {
+type Envi struct {
 	loadedVars map[string]string
 }
 
-func NewEnvi() Envi {
-	return &envi{
+// NewEnvi creates a new Envi instance.
+func NewEnvi() *Envi {
+	return &Envi{
 		loadedVars: make(map[string]string),
 	}
 }
 
-func (envi *envi) FromMap(vars map[string]string) {
+// FromMap loads the given key-value pairs and loads them into the local map.
+func (envi *Envi) FromMap(vars map[string]string) {
 	for key := range vars {
 		envi.loadedVars[key] = vars[key]
 	}
 }
 
-func (envi *envi) LoadEnv(vars ...string) {
+// LoadEnv loads the given keys from the environment variables.
+func (envi *Envi) LoadEnv(vars ...string) {
 	for _, key := range vars {
 		envi.loadedVars[key] = os.Getenv(key)
 	}
 }
 
-func (envi *envi) LoadYAMLFilesFromEnvPaths(vars ...string) error {
+// LoadYAMLFilesFromEnvPaths loads yaml files from the paths in the given environment variables.
+func (envi *Envi) LoadYAMLFilesFromEnvPaths(vars ...string) error {
 	const errMessage = "failed to load yaml files from env paths: %w"
 	for _, key := range vars {
 		path := os.Getenv(key)
@@ -80,7 +52,8 @@ func (envi *envi) LoadYAMLFilesFromEnvPaths(vars ...string) error {
 	return nil
 }
 
-func (envi *envi) LoadJSONFilesFromEnvPaths(vars ...string) error {
+// LoadYAMLFilesFromEnvPaths loads json files from the paths in the given environment variables.
+func (envi *Envi) LoadJSONFilesFromEnvPaths(vars ...string) error {
 	const errMessage = "failed to load json files from env paths: %w"
 
 	for _, key := range vars {
@@ -98,7 +71,9 @@ func (envi *envi) LoadJSONFilesFromEnvPaths(vars ...string) error {
 	return nil
 }
 
-func (envi *envi) LoadFileFromEnvPath(key string, envPath string) error {
+// LoadYAMLFilesFromEnvPaths loads the file content from the paths in the given environment variable
+// to the value of the given key.
+func (envi *Envi) LoadFileFromEnvPath(key string, envPath string) error {
 	const errMessage = "failed to load file from env paths: %w"
 
 	filePath := os.Getenv(envPath)
@@ -114,7 +89,8 @@ func (envi *envi) LoadFileFromEnvPath(key string, envPath string) error {
 	return nil
 }
 
-func (envi *envi) LoadFile(key, filePath string) error {
+// LoadFile loads a string value under given key from a file.
+func (envi *Envi) LoadFile(key, filePath string) error {
 	blob, err := os.ReadFile(filePath)
 	if err != nil {
 		return errors.Wrapf(err, "failed to read file '%s'", filePath)
@@ -125,7 +101,8 @@ func (envi *envi) LoadFile(key, filePath string) error {
 	return nil
 }
 
-func (envi *envi) LoadJSONFiles(paths ...string) error {
+// LoadJSONFiles loads key-value pairs from one or more json files.
+func (envi *Envi) LoadJSONFiles(paths ...string) error {
 	for i := range paths {
 		if err := envi.LoadJSONFile(paths[i]); err != nil {
 			return errors.Wrapf(err, "failed to read json file '%s'", paths[i])
@@ -135,7 +112,8 @@ func (envi *envi) LoadJSONFiles(paths ...string) error {
 	return nil
 }
 
-func (envi *envi) LoadJSONFile(path string) error {
+// LoadJSONFile loads key-value pairs from a json files.
+func (envi *Envi) LoadJSONFile(path string) error {
 	blob, err := os.ReadFile(path)
 	if err != nil {
 		return errors.Wrapf(err, "failed to read json file '%s'", path)
@@ -149,7 +127,8 @@ func (envi *envi) LoadJSONFile(path string) error {
 	return nil
 }
 
-func (envi *envi) LoadJSON(blobs ...[]byte) error {
+// LoadJSON loads key-value pairs from one or many json blobs.
+func (envi *Envi) LoadJSON(blobs ...[]byte) error {
 	for i := range blobs {
 		var decoded map[string]string
 
@@ -166,7 +145,8 @@ func (envi *envi) LoadJSON(blobs ...[]byte) error {
 	return nil
 }
 
-func (envi *envi) LoadYAMLFiles(paths ...string) error {
+// LoadYAMLFiles loads key-value pairs from one or more yaml files.
+func (envi *Envi) LoadYAMLFiles(paths ...string) error {
 	for i := range paths {
 		if err := envi.LoadYAMLFile(paths[i]); err != nil {
 			return errors.Wrapf(err, "failed to read yaml file '%s'", paths[i])
@@ -176,7 +156,8 @@ func (envi *envi) LoadYAMLFiles(paths ...string) error {
 	return nil
 }
 
-func (envi *envi) LoadYAMLFile(path string) error {
+// LoadYAMLFile loads key-value pairs from a yaml files.
+func (envi *Envi) LoadYAMLFile(path string) error {
 	blob, err := os.ReadFile(path)
 	if err != nil {
 		return errors.Wrapf(err, "failed to read yaml file '%s'", path)
@@ -190,7 +171,8 @@ func (envi *envi) LoadYAMLFile(path string) error {
 	return nil
 }
 
-func (envi *envi) LoadYAML(blobs ...[]byte) error {
+// LoadYAML loads key-value pairs from one or many yaml blobs.
+func (envi *Envi) LoadYAML(blobs ...[]byte) error {
 	for i := range blobs {
 		var decoded map[string]string
 
@@ -207,7 +189,8 @@ func (envi *envi) LoadYAML(blobs ...[]byte) error {
 	return nil
 }
 
-func (envi *envi) EnsureVars(requiredVars ...string) error {
+// EnsureVars checks, if all given keys have a non-empty value.
+func (envi *Envi) EnsureVars(requiredVars ...string) error {
 	var missingVars []string
 
 	for _, key := range requiredVars {
@@ -223,12 +206,14 @@ func (envi *envi) EnsureVars(requiredVars ...string) error {
 	return nil
 }
 
-func (envi *envi) ToEnv() {
+// ToEnv writes all key-value pairs to the environment.
+func (envi *Envi) ToEnv() {
 	for key := range envi.loadedVars {
 		os.Setenv(key, envi.loadedVars[key])
 	}
 }
 
-func (envi *envi) ToMap() map[string]string {
+// ToMap returns a map, containing all key-value pairs.
+func (envi *Envi) ToMap() map[string]string {
 	return envi.loadedVars
 }
