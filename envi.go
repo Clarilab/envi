@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/pkg/errors"
 	"gopkg.in/yaml.v2"
 )
 
+// Envi is a config loader to load all sorts of configuration files.
 type Envi struct {
 	loadedVars map[string]string
 }
@@ -41,7 +41,7 @@ func (envi *Envi) LoadYAMLFilesFromEnvPaths(vars ...string) error {
 		path := os.Getenv(key)
 
 		if path == "" {
-			return fmt.Errorf(errMessage, &ErrEnvVarNotFound{key})
+			return fmt.Errorf(errMessage, &EnvVarNotFoundError{key})
 		}
 
 		if err := envi.LoadYAMLFile(path); err != nil {
@@ -60,18 +60,18 @@ func (envi *Envi) LoadJSONFilesFromEnvPaths(vars ...string) error {
 		path := os.Getenv(key)
 
 		if path == "" {
-			return fmt.Errorf(errMessage, &ErrEnvVarNotFound{key})
+			return fmt.Errorf(errMessage, &EnvVarNotFoundError{key})
 		}
 
 		if err := envi.LoadJSONFile(path); err != nil {
-			return errors.Wrapf(err, "failed to read file '%s'", path)
+			return fmt.Errorf(errMessage, err)
 		}
 	}
 
 	return nil
 }
 
-// LoadYAMLFilesFromEnvPaths loads the file content from the paths in the given environment variable
+// LoadYAMLFilesFromEnvPaths loads the file content from the path in the given environment variable
 // to the value of the given key.
 func (envi *Envi) LoadFileFromEnvPath(key string, envPath string) error {
 	const errMessage = "failed to load file from env paths: %w"
@@ -79,7 +79,7 @@ func (envi *Envi) LoadFileFromEnvPath(key string, envPath string) error {
 	filePath := os.Getenv(envPath)
 
 	if filePath == "" {
-		return fmt.Errorf(errMessage, &ErrEnvVarNotFound{envPath})
+		return fmt.Errorf(errMessage, &EnvVarNotFoundError{envPath})
 	}
 
 	if err := envi.LoadFile(key, filePath); err != nil {
@@ -91,9 +91,11 @@ func (envi *Envi) LoadFileFromEnvPath(key string, envPath string) error {
 
 // LoadFile loads a string value under given key from a file.
 func (envi *Envi) LoadFile(key, filePath string) error {
+	const errMessage = "failed to load file: %w"
+
 	blob, err := os.ReadFile(filePath)
 	if err != nil {
-		return errors.Wrapf(err, "failed to read file '%s'", filePath)
+		return fmt.Errorf(errMessage, &FailedToReadFileError{filePath})
 	}
 
 	envi.loadedVars[key] = string(blob)
@@ -103,25 +105,29 @@ func (envi *Envi) LoadFile(key, filePath string) error {
 
 // LoadJSONFiles loads key-value pairs from one or more json files.
 func (envi *Envi) LoadJSONFiles(paths ...string) error {
+	const errMessage = "failed to load json files: %w"
+
 	for i := range paths {
 		if err := envi.LoadJSONFile(paths[i]); err != nil {
-			return errors.Wrapf(err, "failed to read json file '%s'", paths[i])
+			return fmt.Errorf(errMessage, err)
 		}
 	}
 
 	return nil
 }
 
-// LoadJSONFile loads key-value pairs from a json files.
+// LoadJSONFile loads key-value pairs from a json file.
 func (envi *Envi) LoadJSONFile(path string) error {
+	const errMessage = "failed to load json file: %w"
+
 	blob, err := os.ReadFile(path)
 	if err != nil {
-		return errors.Wrapf(err, "failed to read json file '%s'", path)
+		return fmt.Errorf(errMessage, &FailedToReadFileError{path})
 	}
 
 	err = envi.LoadJSON(blob)
 	if err != nil {
-		return errors.Wrapf(err, "failed to load json file '%s'", path)
+		return fmt.Errorf(errMessage, err)
 	}
 
 	return nil
@@ -129,12 +135,14 @@ func (envi *Envi) LoadJSONFile(path string) error {
 
 // LoadJSON loads key-value pairs from one or many json blobs.
 func (envi *Envi) LoadJSON(blobs ...[]byte) error {
+	const errMessage = "failed to load json: %w"
+
 	for i := range blobs {
 		var decoded map[string]string
 
 		err := json.Unmarshal(blobs[i], &decoded)
 		if err != nil {
-			return errors.Wrap(err, "failed to unmarshal json")
+			return fmt.Errorf(errMessage, err)
 		}
 
 		for key := range decoded {
@@ -147,25 +155,29 @@ func (envi *Envi) LoadJSON(blobs ...[]byte) error {
 
 // LoadYAMLFiles loads key-value pairs from one or more yaml files.
 func (envi *Envi) LoadYAMLFiles(paths ...string) error {
+	const errMessage = "failed to load yaml files: %w"
+
 	for i := range paths {
 		if err := envi.LoadYAMLFile(paths[i]); err != nil {
-			return errors.Wrapf(err, "failed to read yaml file '%s'", paths[i])
+			return fmt.Errorf(errMessage, err)
 		}
 	}
 
 	return nil
 }
 
-// LoadYAMLFile loads key-value pairs from a yaml files.
+// LoadYAMLFile loads key-value pairs from a yaml file.
 func (envi *Envi) LoadYAMLFile(path string) error {
+	const errMessage = "failed to load yaml file: %w"
+
 	blob, err := os.ReadFile(path)
 	if err != nil {
-		return errors.Wrapf(err, "failed to read yaml file '%s'", path)
+		return fmt.Errorf(errMessage, &FailedToReadFileError{path})
 	}
 
 	err = envi.LoadYAML(blob)
 	if err != nil {
-		return errors.Wrapf(err, "failed to load yaml file '%s'", path)
+		return fmt.Errorf(errMessage, err)
 	}
 
 	return nil
@@ -173,12 +185,14 @@ func (envi *Envi) LoadYAMLFile(path string) error {
 
 // LoadYAML loads key-value pairs from one or many yaml blobs.
 func (envi *Envi) LoadYAML(blobs ...[]byte) error {
+	const errMessage = "failed to load yaml file: %w"
+
 	for i := range blobs {
 		var decoded map[string]string
 
 		err := yaml.Unmarshal(blobs[i], &decoded)
 		if err != nil {
-			return errors.Wrap(err, "failed to unmarshal yaml")
+			return fmt.Errorf(errMessage, err)
 		}
 
 		for key := range decoded {

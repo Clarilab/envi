@@ -12,15 +12,23 @@ go get github.com/Clarilab/envi/v2
 import "github.com/Clarilab/envi/v2"
 ```
 
-## Features
+## Available functions
 
 ```go
-type Envi interface {
 	// FromMap loads the given key-value pairs and loads them into the local map.
 	FromMap(map[string]string)
 
 	// LoadEnv loads the given keys from environment.
 	LoadEnv(vars ...string)
+
+	// LoadYAMLFilesFromEnvPaths loads yaml files from the paths in the given environment variables.
+	LoadYAMLFilesFromEnvPaths(vars ...string) error 
+
+	// LoadYAMLFilesFromEnvPaths loads json files from the paths in the given environment variables.
+	LoadJSONFilesFromEnvPaths(vars ...string) error
+
+	// LoadYAMLFilesFromEnvPaths loads the file content from the path in the given environment variable to the value of the given key.
+	LoadFileFromEnvPath(key string, envPath string) error 
 
 	// LoadFile loads a string value under given key from a file.
 	LoadFile(key, filePath string) error
@@ -28,11 +36,17 @@ type Envi interface {
 	// LoadJSON loads key-value pairs from one or many json blobs.
 	LoadJSON(...[]byte) error
 
+	// LoadJSONFile loads key-value pairs from a json file.
+	LoadJSONFile(path string) error
+
 	// LoadJSONFiles loads key-value pairs from one or more json files.
 	LoadJSONFiles(...string) error
 
 	// LoadYAML loads key-value pairs from one or many yaml blobs.
 	LoadYAML(...[]byte) error
+
+	// LoadYAMLFile loads key-value pairs from a yaml file.
+	LoadYAMLFile(path string) error 
 
 	// LoadYAMLFiles loads key-value pairs from one or more yaml files.
 	LoadYAMLFiles(...string) error
@@ -45,7 +59,6 @@ type Envi interface {
 
 	// ToMap returns a map, containing all key-value pairs.
 	ToMap() map[string]string
-}
 ```
 
 ### Examples

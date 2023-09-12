@@ -18,12 +18,22 @@ func (e *RequiredEnvVarsMissing) printMissingVars() string {
 	return strings.Join(e.MissingVars, ", ")
 }
 
-// ErrEnvVarNotFound says, that a given Environment Variable is not found.
-type ErrEnvVarNotFound struct {
+// EnvVarNotFoundError says, that a given Environment Variable is not found.
+type EnvVarNotFoundError struct {
 	variable string
 }
 
 // Error implements the error interface.
-func (e *ErrEnvVarNotFound) Error() string {
-	return fmt.Sprintf("environment variable %s not found", e.variable)
+func (e *EnvVarNotFoundError) Error() string {
+	return fmt.Sprintf("environment variable '%s' not found", e.variable)
+}
+
+// FailedToReadFileError says, that a given file could not be read.
+type FailedToReadFileError struct {
+	path string
+}
+
+// Error implements the error interface.
+func (e *FailedToReadFileError) Error() string {
+	return fmt.Sprintf("failed to read file '%s'", e.path)
 }
