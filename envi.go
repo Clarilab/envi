@@ -3,8 +3,10 @@ package envi
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 
+	"github.com/fsnotify/fsnotify"
 	"gopkg.in/yaml.v2"
 )
 
@@ -183,6 +185,37 @@ func (envi *Envi) LoadYAMLFile(path string) error {
 	return nil
 }
 
+// LoadAndWatchYAMLFile loads key-value pairs from a yaml file,
+// then watches that file and reloads it when it changes.
+// Accepts an additional callback function that is executed
+// after the file was reloaded. Returns and error when something
+// goes wrong. When no error is returned, returns a close function
+// that should be deferred in the calling function.
+func (envi *Envi) LoadAndWatchYAMLFile(path string, callback func() error) (error, func() error) {
+	const errMessage = "failed to load and watch yaml file: %w"
+
+	err := envi.LoadYAMLFile(path)
+	if err != nil {
+		return fmt.Errorf(errMessage, err), nil
+	}
+
+	watcher, err := fsnotify.NewWatcher()
+	if err != nil {
+		watcher.Close()
+		return fmt.Errorf(errMessage, err), nil
+	}
+
+	go envi.yamlWatcher(watcher, path, callback)
+
+	err = watcher.Add(path)
+	if err != nil {
+		watcher.Close()
+		return fmt.Errorf(errMessage, err), nil
+	}
+
+	return nil, watcher.Close
+}
+
 // LoadYAML loads key-value pairs from one or many yaml blobs.
 func (envi *Envi) LoadYAML(blobs ...[]byte) error {
 	const errMessage = "failed to load yaml file: %w"
@@ -230,4 +263,43 @@ func (envi *Envi) ToEnv() {
 // ToMap returns a map, containing all key-value pairs.
 func (envi *Envi) ToMap() map[string]string {
 	return envi.loadedVars
+}
+
+func (envi *Envi) yamlWatcher(watcher *fsnotify.Watcher, path string, callback func() error) {
+	for {
+		select {
+		case event, ok := <-watcher.Events:
+			if !ok {
+				return
+			}
+
+			if event.Has(fsnotify.Chmod) || event.Has(fsnotify.Write) {
+				err := envi.LoadYAMLFile(path)
+				if err != nil {
+					log.Printf("error reloading config file '%s': %v", path, err)
+					continue
+				}
+
+				if callback == nil {
+					continue
+				}
+
+				err = callback()
+				if err != nil {
+					log.Printf("error executing callback for config file '%s': %v", path, err)
+				}
+			} else if event.Has(fsnotify.Remove) {
+				err := watcher.Add(path)
+				if err != nil {
+					log.Printf("error reenabling watcher for config file '%s': %v", path, err)
+				}
+			}
+		case err, ok := <-watcher.Errors:
+			if !ok {
+				return
+			}
+
+			log.Printf("error watching config file '%s': %v", path, err)
+		}
+	}
 }
