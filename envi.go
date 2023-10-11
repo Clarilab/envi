@@ -3,9 +3,7 @@ package envi
 import (
 	"encoding/json"
 	"fmt"
-	"log"
 	"os"
-	"path"
 
 	"github.com/fsnotify/fsnotify"
 	"gopkg.in/yaml.v2"
@@ -141,29 +139,17 @@ func (envi *Envi) LoadJSONFile(path string) error {
 // Accepts an additional callback function that is executed
 // after the file was reloaded. Returns and error when something
 // goes wrong. When no error is returned, returns a close function
-// that should be deferred in the calling function.
-func (envi *Envi) LoadAndWatchJSONFile(path string, callback func() error) (error, func() error) {
+// that should be deferred in the calling function, and an error
+// channel where errors that occur during the file watching get sent.
+func (envi *Envi) LoadAndWatchJSONFile(path string, callback func() error) (error, func() error, <-chan error) {
 	const errMessage = "failed to load and watch json file: %w"
 
-	err := envi.LoadJSONFile(path)
+	err, closeFunc, watchErrChan := envi.loadAndWatchFile(path, envi.LoadJSONFile, callback)
 	if err != nil {
-		return fmt.Errorf(errMessage, err), nil
+		return fmt.Errorf(errMessage, err), nil, nil
 	}
 
-	watcher, err := fsnotify.NewWatcher()
-	if err != nil {
-		return fmt.Errorf(errMessage, err), nil
-	}
-
-	go envi.fileWatcher(watcher, path, callback)
-
-	err = watcher.Add(path)
-	if err != nil {
-		watcher.Close()
-		return fmt.Errorf(errMessage, err), nil
-	}
-
-	return nil, watcher.Close
+	return nil, closeFunc, watchErrChan
 }
 
 // LoadJSON loads key-value pairs from one or many json blobs.
@@ -222,28 +208,18 @@ func (envi *Envi) LoadYAMLFile(path string) error {
 // after the file was reloaded. Returns and error when something
 // goes wrong. When no error is returned, returns a close function
 // that should be deferred in the calling function.
-func (envi *Envi) LoadAndWatchYAMLFile(path string, callback func() error) (error, func() error) {
+func (envi *Envi) LoadAndWatchYAMLFile(
+	path string,
+	callback func() error,
+) (error, func() error, <-chan error) {
 	const errMessage = "failed to load and watch yaml file: %w"
 
-	err := envi.LoadYAMLFile(path)
+	err, closeFunc, watchErrChan := envi.loadAndWatchFile(path, envi.LoadYAMLFile, callback)
 	if err != nil {
-		return fmt.Errorf(errMessage, err), nil
+		return fmt.Errorf(errMessage, err), nil, nil
 	}
 
-	watcher, err := fsnotify.NewWatcher()
-	if err != nil {
-		return fmt.Errorf(errMessage, err), nil
-	}
-
-	go envi.fileWatcher(watcher, path, callback)
-
-	err = watcher.Add(path)
-	if err != nil {
-		watcher.Close()
-		return fmt.Errorf(errMessage, err), nil
-	}
-
-	return nil, watcher.Close
+	return nil, closeFunc, watchErrChan
 }
 
 // LoadYAML loads key-value pairs from one or many yaml blobs.
@@ -295,12 +271,43 @@ func (envi *Envi) ToMap() map[string]string {
 	return envi.loadedVars
 }
 
-func (envi *Envi) fileWatcher(watcher *fsnotify.Watcher, filePath string, callback func() error) {
-	isYaml := true
-	if path.Ext(filePath) == ".json" {
-		isYaml = false
+func (envi *Envi) loadAndWatchFile(
+	path string,
+	loadFunc func(string) error,
+	callback func() error,
+) (error, func() error, <-chan error) {
+	const errMessage = "failed to load and watch file: %w"
+
+	err := loadFunc(path)
+	if err != nil {
+		return fmt.Errorf(errMessage, err), nil, nil
 	}
 
+	watcher, err := fsnotify.NewWatcher()
+	if err != nil {
+		return fmt.Errorf(errMessage, err), nil, nil
+	}
+
+	watchErrChan := make(chan error, 1)
+
+	go envi.fileWatcher(watcher, path, loadFunc, callback, watchErrChan)
+
+	err = watcher.Add(path)
+	if err != nil {
+		watcher.Close()
+		return fmt.Errorf(errMessage, err), nil, nil
+	}
+
+	return nil, watcher.Close, watchErrChan
+}
+
+func (envi *Envi) fileWatcher(
+	watcher *fsnotify.Watcher,
+	filePath string,
+	loadFunc func(string) error,
+	callback func() error,
+	watchErrChan chan<- error,
+) {
 	for {
 		select {
 		case event, ok := <-watcher.Events:
@@ -309,16 +316,9 @@ func (envi *Envi) fileWatcher(watcher *fsnotify.Watcher, filePath string, callba
 			}
 
 			if event.Has(fsnotify.Chmod) || event.Has(fsnotify.Write) {
-				var err error
-
-				if isYaml {
-					err = envi.LoadYAMLFile(filePath)
-				} else {
-					err = envi.LoadJSONFile(filePath)
-				}
-
+				err := loadFunc(filePath)
 				if err != nil {
-					log.Printf("error reloading config file '%s': %v", filePath, err)
+					watchErrChan <- fmt.Errorf("error reloading watched file: %w", err)
 					continue
 				}
 
@@ -328,12 +328,12 @@ func (envi *Envi) fileWatcher(watcher *fsnotify.Watcher, filePath string, callba
 
 				err = callback()
 				if err != nil {
-					log.Printf("error executing callback for config file '%s': %v", filePath, err)
+					watchErrChan <- fmt.Errorf("error executing callback for watched file: %w", err)
 				}
 			} else if event.Has(fsnotify.Remove) {
 				err := watcher.Add(filePath)
 				if err != nil {
-					log.Printf("error reenabling watcher for config file '%s': %v", filePath, err)
+					watchErrChan <- fmt.Errorf("error reenabling watcher for file: %w", err)
 				}
 			}
 		case err, ok := <-watcher.Errors:
@@ -341,7 +341,7 @@ func (envi *Envi) fileWatcher(watcher *fsnotify.Watcher, filePath string, callba
 				return
 			}
 
-			log.Printf("error watching config file '%s': %v", filePath, err)
+			watchErrChan <- fmt.Errorf("error while watching file: %w", err)
 		}
 	}
 }

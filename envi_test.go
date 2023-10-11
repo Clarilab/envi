@@ -2,6 +2,7 @@ package envi_test
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -455,13 +456,17 @@ func Test_LoadAndWatchFile(t *testing.T) {
 		// load and watch the yaml file
 		e := envi.NewEnvi()
 
-		err, closeFunc := e.LoadAndWatchYAMLFile(configFilePath, watcherCallback)
+		err, closeFunc, _ := e.LoadAndWatchYAMLFile(configFilePath, watcherCallback)
+		assert.NoError(t, err)
 
+		// cleanup
 		defer func() {
 			err := closeFunc()
 			if err != nil {
 				t.Logf("Failed to close watcher: %v", err)
 			}
+
+			os.Remove(configFilePath)
 		}()
 
 		assert.NoError(t, err)
@@ -490,9 +495,6 @@ func Test_LoadAndWatchFile(t *testing.T) {
 
 		// assert the callback has been executed
 		assert.True(t, callbackProof.wasCalled)
-
-		// cleanup
-		os.Remove(configFilePath)
 	})
 
 	t.Run("json file", func(t *testing.T) {
@@ -512,13 +514,17 @@ func Test_LoadAndWatchFile(t *testing.T) {
 		// load and watch the json file
 		e := envi.NewEnvi()
 
-		err, closeFunc := e.LoadAndWatchJSONFile(configFilePath, watcherCallback)
+		err, closeFunc, _ := e.LoadAndWatchJSONFile(configFilePath, watcherCallback)
+		assert.NoError(t, err)
 
+		// cleanup
 		defer func() {
 			err := closeFunc()
 			if err != nil {
 				t.Logf("Failed to close watcher: %v", err)
 			}
+
+			os.Remove(configFilePath)
 		}()
 
 		assert.NoError(t, err)
@@ -547,9 +553,125 @@ func Test_LoadAndWatchFile(t *testing.T) {
 
 		// assert the callback has been executed
 		assert.True(t, callbackProof.wasCalled)
+	})
+
+	t.Run("nonexistent file returns error", func(t *testing.T) {
+		const configFilePath = "I/do/not/exist"
+
+		e := envi.NewEnvi()
+
+		err, _, _ := e.LoadAndWatchJSONFile(configFilePath, nil)
+		assert.Error(t, err)
+	})
+
+	t.Run("file removed during the watching sends error over channel", func(t *testing.T) {
+		const configFilePath = "testdata/watchmegetremoved.json"
+
+		testConfig.Foo = initialFooVal
+		testConfig.Quo = initialQuoVal
+		callbackProof.wasCalled = false
+
+		blob, err := json.Marshal(testConfig)
+		assert.NoError(t, err)
+
+		err = os.WriteFile(configFilePath, blob, 0644)
+		assert.NoError(t, err)
+
+		// load and watch the json file
+		e := envi.NewEnvi()
+
+		err, closeFunc, watchErrChan := e.LoadAndWatchJSONFile(configFilePath, watcherCallback)
+		assert.NoError(t, err)
+
+		defer func() {
+			err := closeFunc()
+			if err != nil {
+				t.Logf("Failed to close watcher: %v", err)
+			}
+		}()
+
+		var watchErrors []error
+
+		go func() {
+			for {
+				err, ok := <-watchErrChan
+				if !ok {
+					return
+				}
+
+				watchErrors = append(watchErrors, err)
+			}
+		}()
+
+		time.Sleep(time.Millisecond)
+
+		os.Remove(configFilePath)
+
+		time.Sleep(time.Millisecond)
+
+		assert.NotEmpty(t, watchErrors)
+
+		assert.False(t, callbackProof.wasCalled)
+	})
+
+	t.Run("error during callback execution gets sent over channel", func(t *testing.T) {
+		const configFilePath = "testdata/watchme.json"
+
+		testConfig.Foo = initialFooVal
+		testConfig.Quo = initialQuoVal
+		callbackProof.wasCalled = false
+
+		blob, err := json.Marshal(testConfig)
+		assert.NoError(t, err)
+
+		err = os.WriteFile(configFilePath, blob, 0644)
+		assert.NoError(t, err)
+
+		callbackThatTrowsError := func() error {
+			return errors.New("Oh snap!")
+		}
+
+		// load and watch the json file
+		e := envi.NewEnvi()
+
+		err, closeFunc, watchErrChan := e.LoadAndWatchJSONFile(configFilePath, callbackThatTrowsError)
+		assert.NoError(t, err)
 
 		// cleanup
-		os.Remove(configFilePath)
+		defer func() {
+			err := closeFunc()
+			if err != nil {
+				t.Logf("Failed to close watcher: %v", err)
+			}
+
+			os.Remove(configFilePath)
+		}()
+
+		var watchErrors []error
+
+		go func() {
+			for {
+				err, ok := <-watchErrChan
+				if !ok {
+					return
+				}
+
+				watchErrors = append(watchErrors, err)
+			}
+		}()
+
+		// change the file
+		testConfig.Quo = changedQuoVal
+
+		newBlob, err := json.Marshal(testConfig)
+		assert.NoError(t, err)
+
+		err = os.WriteFile(configFilePath, newBlob, 0644)
+		assert.NoError(t, err)
+
+		time.Sleep(time.Millisecond)
+
+		assert.NotEmpty(t, watchErrors)
 	})
 
 }
