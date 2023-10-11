@@ -484,7 +484,7 @@ func Test_LoadAndWatchFile(t *testing.T) {
 		assert.NoError(t, err)
 
 		// Wait for changes to take effect (without this, the test fails)
-		time.Sleep(time.Millisecond)
+		time.Sleep(100 * time.Millisecond)
 
 		// assert the change is noticed and reflected
 		confMap := e.ToMap()
@@ -542,7 +542,7 @@ func Test_LoadAndWatchFile(t *testing.T) {
 		assert.NoError(t, err)
 
 		// Wait for changes to take effect (without this, the test fails)
-		time.Sleep(time.Millisecond)
+		time.Sleep(100 * time.Millisecond)
 
 		// assert the change is noticed and reflected
 		confMap := e.ToMap()
@@ -603,11 +603,11 @@ func Test_LoadAndWatchFile(t *testing.T) {
 			}
 		}()
 
-		time.Sleep(time.Millisecond)
+		time.Sleep(100 * time.Millisecond)
 
 		os.Remove(configFilePath)
 
-		time.Sleep(time.Millisecond)
+		time.Sleep(100 * time.Millisecond)
 
 		assert.NotEmpty(t, watchErrors)
 
@@ -669,7 +669,7 @@ func Test_LoadAndWatchFile(t *testing.T) {
 		err = os.WriteFile(configFilePath, newBlob, 0644)
 		assert.NoError(t, err)
 
-		time.Sleep(time.Millisecond)
+		time.Sleep(100 * time.Millisecond)
 
 		assert.NotEmpty(t, watchErrors)
 	})
