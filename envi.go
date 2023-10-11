@@ -274,7 +274,10 @@ func (envi *Envi) loadAndWatchFile(
 	loadFunc func(string) error,
 	callbacks ...func() error,
 ) (error, func() error, <-chan error) {
-	const errMessage = "failed to load and watch file: %w"
+	const (
+		errMessage        = "failed to load and watch file: %w"
+		errChanBufferSize = 10
+	)
 
 	err := loadFunc(path)
 	if err != nil {
@@ -286,7 +289,7 @@ func (envi *Envi) loadAndWatchFile(
 		return fmt.Errorf(errMessage, err), nil, nil
 	}
 
-	watchErrChan := make(chan error)
+	watchErrChan := make(chan error, errChanBufferSize)
 
 	go envi.fileWatcher(watcher, path, loadFunc, watchErrChan, callbacks...)
 
