@@ -152,7 +152,6 @@ func (envi *Envi) LoadAndWatchJSONFile(path string, callback func() error) (erro
 
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
-		watcher.Close()
 		return fmt.Errorf(errMessage, err), nil
 	}
 
@@ -233,7 +232,6 @@ func (envi *Envi) LoadAndWatchYAMLFile(path string, callback func() error) (erro
 
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
-		watcher.Close()
 		return fmt.Errorf(errMessage, err), nil
 	}
 
