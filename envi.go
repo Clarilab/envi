@@ -207,11 +207,9 @@ func (envi *Envi) LoadYAMLFile(path string) error {
 // Accepts an additional callback function that is executed
 // after the file was reloaded. Returns and error when something
 // goes wrong. When no error is returned, returns a close function
-// that should be deferred in the calling function.
-func (envi *Envi) LoadAndWatchYAMLFile(
-	path string,
-	callback func() error,
-) (error, func() error, <-chan error) {
+// that should be deferred in the calling function, and an error
+// channel where errors that occur during the file watching get sent.
+func (envi *Envi) LoadAndWatchYAMLFile(path string, callback func() error) (error, func() error, <-chan error) {
 	const errMessage = "failed to load and watch yaml file: %w"
 
 	err, closeFunc, watchErrChan := envi.loadAndWatchFile(path, envi.LoadYAMLFile, callback)

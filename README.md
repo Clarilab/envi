@@ -41,8 +41,9 @@ import "github.com/Clarilab/envi/v2"
 	// Accepts an additional callback function that is executed
 	// after the file was reloaded. Returns and error when something
 	// goes wrong. When no error is returned, returns a close function
-	// that should be deferred in the calling function.
-	LoadAndWatchJSONFile(path string, callback func() error) (error, func() error)
+	// that should be deferred in the calling function, and an error
+	// channel where errors that occur during the file watching get sent.
+	LoadAndWatchJSONFile(path string, callback func() error) (error, func() error, <-chan error)
 
 	// LoadJSONFile loads key-value pairs from a json file.
 	LoadJSONFile(path string) error
@@ -58,8 +59,9 @@ import "github.com/Clarilab/envi/v2"
 	// Accepts an additional callback function that is executed
 	// after the file was reloaded. Returns and error when something
 	// goes wrong. When no error is returned, returns a close function
-	// that should be deferred in the calling function.
-	LoadAndWatchYAMLFile(path string, callback func() error) (error, func() error)
+	// that should be deferred in the calling function, and an error
+	// channel where errors that occur during the file watching get sent.
+	LoadAndWatchYAMLFile(path string, callback func() error,) (error, func() error, <-chan error)
 
 	// LoadYAMLFile loads key-value pairs from a yaml file.
 	LoadYAMLFile(path string) error 
