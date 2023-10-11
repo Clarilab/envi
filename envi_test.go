@@ -1,9 +1,11 @@
 package envi_test
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/Clarilab/envi/v2"
 	"github.com/stretchr/testify/assert"
@@ -413,16 +415,19 @@ func Test_LoadFileFromEnvPath(t *testing.T) {
 	})
 }
 
-func Test_LoadAndWatchYAMLFile(t *testing.T) {
-	const configFilePath = "testdata/watchme.yaml"
+func Test_LoadAndWatchFile(t *testing.T) {
+	const (
+		fooKey        = "foo"
+		quoKey        = "quo"
+		initialFooVal = "bar"
+		initialQuoVal = "qux"
+		changedQuoVal = "baz"
+	)
 
 	testConfig := struct {
-		Foo string
-		Quo string
-	}{
-		Foo: "bar",
-		Quo: "qux",
-	}
+		Foo string `json:"foo"`
+		Quo string `json:"quo"`
+	}{}
 
 	callbackProof := struct {
 		wasCalled bool
@@ -433,49 +438,118 @@ func Test_LoadAndWatchYAMLFile(t *testing.T) {
 		return nil
 	}
 
-	// write a yaml file to disk
-	blob, err := yaml.Marshal(testConfig)
-	assert.NoError(t, err)
+	t.Run("yaml file", func(t *testing.T) {
+		const configFilePath = "testdata/watchme.yaml"
 
-	err = os.WriteFile(configFilePath, blob, 0644)
-	assert.NoError(t, err)
+		testConfig.Foo = initialFooVal
+		testConfig.Quo = initialQuoVal
+		callbackProof.wasCalled = false
 
-	// load and watch the yaml file
-	e := envi.NewEnvi()
+		// write a yaml file to disk
+		blob, err := yaml.Marshal(testConfig)
+		assert.NoError(t, err)
 
-	err, closeFunc := e.LoadAndWatchYAMLFile(configFilePath, watcherCallback)
+		err = os.WriteFile(configFilePath, blob, 0644)
+		assert.NoError(t, err)
 
-	defer func() {
-		err := closeFunc()
-		if err != nil {
-			t.Logf("Failed to close watcher: %v", err)
-		}
-	}()
+		// load and watch the yaml file
+		e := envi.NewEnvi()
 
-	assert.NoError(t, err)
+		err, closeFunc := e.LoadAndWatchYAMLFile(configFilePath, watcherCallback)
 
-	err = e.EnsureVars("foo", "quo")
-	assert.NoError(t, err)
+		defer func() {
+			err := closeFunc()
+			if err != nil {
+				t.Logf("Failed to close watcher: %v", err)
+			}
+		}()
 
-	// change the file
-	testConfig.Quo = "whoops"
+		assert.NoError(t, err)
 
-	newBlob, err := yaml.Marshal(testConfig)
-	assert.NoError(t, err)
+		err = e.EnsureVars(fooKey, quoKey)
+		assert.NoError(t, err)
 
-	err = os.WriteFile(configFilePath, newBlob, 0644)
-	assert.NoError(t, err)
+		// change the file
+		testConfig.Quo = changedQuoVal
 
-	// assert the change is noticed and reflected
-	confMap := e.ToMap()
+		newBlob, err := yaml.Marshal(testConfig)
+		assert.NoError(t, err)
 
-	newQuo, ok := confMap["quo"]
-	assert.True(t, ok)
-	assert.Equal(t, "whoops", newQuo)
+		err = os.WriteFile(configFilePath, newBlob, 0644)
+		assert.NoError(t, err)
 
-	// assert the callback has been executed
-	assert.True(t, callbackProof.wasCalled)
+		// Wait for changes to take effect (without this, the test fails)
+		time.Sleep(time.Millisecond)
 
-	// cleanup
-	os.Remove(configFilePath)
+		// assert the change is noticed and reflected
+		confMap := e.ToMap()
+
+		newQuo, ok := confMap[quoKey]
+		assert.True(t, ok)
+		assert.Equal(t, changedQuoVal, newQuo)
+
+		// assert the callback has been executed
+		assert.True(t, callbackProof.wasCalled)
+
+		// cleanup
+		os.Remove(configFilePath)
+	})
+
+	t.Run("json file", func(t *testing.T) {
+		const configFilePath = "testdata/watchme.json"
+
+		testConfig.Foo = initialFooVal
+		testConfig.Quo = initialQuoVal
+		callbackProof.wasCalled = false
+
+		// write a json file to disk
+		blob, err := json.Marshal(testConfig)
+		assert.NoError(t, err)
+
+		err = os.WriteFile(configFilePath, blob, 0644)
+		assert.NoError(t, err)
+
+		// load and watch the json file
+		e := envi.NewEnvi()
+
+		err, closeFunc := e.LoadAndWatchJSONFile(configFilePath, watcherCallback)
+
+		defer func() {
+			err := closeFunc()
+			if err != nil {
+				t.Logf("Failed to close watcher: %v", err)
+			}
+		}()
+
+		assert.NoError(t, err)
+
+		err = e.EnsureVars(fooKey, quoKey)
+		assert.NoError(t, err)
+
+		// change the file
+		testConfig.Quo = changedQuoVal
+
+		newBlob, err := json.Marshal(testConfig)
+		assert.NoError(t, err)
+
+		err = os.WriteFile(configFilePath, newBlob, 0644)
+		assert.NoError(t, err)
+
+		// Wait for changes to take effect (without this, the test fails)
+		time.Sleep(time.Millisecond)
+
+		// assert the change is noticed and reflected
+		confMap := e.ToMap()
+
+		newQuo, ok := confMap[quoKey]
+		assert.True(t, ok)
+		assert.Equal(t, changedQuoVal, newQuo)
+
+		// assert the callback has been executed
+		assert.True(t, callbackProof.wasCalled)
+
+		// cleanup
+		os.Remove(configFilePath)
+	})
+
 }
