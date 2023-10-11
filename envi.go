@@ -286,7 +286,7 @@ func (envi *Envi) loadAndWatchFile(
 		return fmt.Errorf(errMessage, err), nil, nil
 	}
 
-	watchErrChan := make(chan error, 1)
+	watchErrChan := make(chan error)
 
 	go envi.fileWatcher(watcher, path, loadFunc, callback, watchErrChan)
 
