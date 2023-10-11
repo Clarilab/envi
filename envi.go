@@ -136,15 +136,15 @@ func (envi *Envi) LoadJSONFile(path string) error {
 
 // LoadAndWatchJSONFile loads key-value pairs from a json file,
 // then watches that file and reloads it when it changes.
-// Accepts an additional callback function that is executed
+// Accepts optional callback functions that are executed
 // after the file was reloaded. Returns and error when something
 // goes wrong. When no error is returned, returns a close function
 // that should be deferred in the calling function, and an error
 // channel where errors that occur during the file watching get sent.
-func (envi *Envi) LoadAndWatchJSONFile(path string, callback func() error) (error, func() error, <-chan error) {
+func (envi *Envi) LoadAndWatchJSONFile(path string, callback ...func() error) (error, func() error, <-chan error) {
 	const errMessage = "failed to load and watch json file: %w"
 
-	err, closeFunc, watchErrChan := envi.loadAndWatchFile(path, envi.LoadJSONFile, callback)
+	err, closeFunc, watchErrChan := envi.loadAndWatchFile(path, envi.LoadJSONFile, callback...)
 	if err != nil {
 		return fmt.Errorf(errMessage, err), nil, nil
 	}
@@ -204,15 +204,15 @@ func (envi *Envi) LoadYAMLFile(path string) error {
 
 // LoadAndWatchYAMLFile loads key-value pairs from a yaml file,
 // then watches that file and reloads it when it changes.
-// Accepts an additional callback function that is executed
+// Accepts optional callback functions that are executed
 // after the file was reloaded. Returns and error when something
 // goes wrong. When no error is returned, returns a close function
 // that should be deferred in the calling function, and an error
 // channel where errors that occur during the file watching get sent.
-func (envi *Envi) LoadAndWatchYAMLFile(path string, callback func() error) (error, func() error, <-chan error) {
+func (envi *Envi) LoadAndWatchYAMLFile(path string, callbacks ...func() error) (error, func() error, <-chan error) {
 	const errMessage = "failed to load and watch yaml file: %w"
 
-	err, closeFunc, watchErrChan := envi.loadAndWatchFile(path, envi.LoadYAMLFile, callback)
+	err, closeFunc, watchErrChan := envi.loadAndWatchFile(path, envi.LoadYAMLFile, callbacks...)
 	if err != nil {
 		return fmt.Errorf(errMessage, err), nil, nil
 	}
@@ -272,7 +272,7 @@ func (envi *Envi) ToMap() map[string]string {
 func (envi *Envi) loadAndWatchFile(
 	path string,
 	loadFunc func(string) error,
-	callback func() error,
+	callbacks ...func() error,
 ) (error, func() error, <-chan error) {
 	const errMessage = "failed to load and watch file: %w"
 
@@ -288,7 +288,7 @@ func (envi *Envi) loadAndWatchFile(
 
 	watchErrChan := make(chan error)
 
-	go envi.fileWatcher(watcher, path, loadFunc, callback, watchErrChan)
+	go envi.fileWatcher(watcher, path, loadFunc, watchErrChan, callbacks...)
 
 	err = watcher.Add(path)
 	if err != nil {
@@ -303,8 +303,8 @@ func (envi *Envi) fileWatcher(
 	watcher *fsnotify.Watcher,
 	filePath string,
 	loadFunc func(string) error,
-	callback func() error,
 	watchErrChan chan<- error,
+	callbacks ...func() error,
 ) {
 	for {
 		select {
@@ -320,13 +320,11 @@ func (envi *Envi) fileWatcher(
 					continue
 				}
 
-				if callback == nil {
-					continue
-				}
-
-				err = callback()
-				if err != nil {
-					watchErrChan <- fmt.Errorf("error executing callback for watched file: %w", err)
+				for i := range callbacks {
+					err = callbacks[i]()
+					if err != nil {
+						watchErrChan <- fmt.Errorf("error executing callback for watched file: %w", err)
+					}
 				}
 			} else if event.Has(fsnotify.Remove) {
 				err := watcher.Add(filePath)

@@ -38,7 +38,7 @@ import "github.com/Clarilab/envi/v2"
 
 	// LoadAndWatchJSONFile loads key-value pairs from a json file,
 	// then watches that file and reloads it when it changes.
-	// Accepts an additional callback function that is executed
+	// Accepts optional callback function that are executed
 	// after the file was reloaded. Returns and error when something
 	// goes wrong. When no error is returned, returns a close function
 	// that should be deferred in the calling function, and an error
@@ -56,7 +56,7 @@ import "github.com/Clarilab/envi/v2"
 
 	// LoadAndWatchYAMLFile loads key-value pairs from a yaml file,
 	// then watches that file and reloads it when it changes.
-	// Accepts an additional callback function that is executed
+	// Accepts optional callback function that are executed
 	// after the file was reloaded. Returns and error when something
 	// goes wrong. When no error is returned, returns a close function
 	// that should be deferred in the calling function, and an error
