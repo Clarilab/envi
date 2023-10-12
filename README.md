@@ -36,6 +36,15 @@ import "github.com/Clarilab/envi/v2"
 	// LoadJSON loads key-value pairs from one or many json blobs.
 	LoadJSON(...[]byte) error
 
+	// LoadAndWatchJSONFile loads key-value pairs from a json file,
+	// then watches that file and reloads it when it changes.
+	// Accepts optional callback functions that are executed
+	// after the file was reloaded. Returns and error when something
+	// goes wrong. When no error is returned, returns a close function
+	// that should be deferred in the calling function, and an error
+	// channel where errors that occur during the file watching get sent.
+	LoadAndWatchJSONFile(path string, callbacks ...func() error) (error, func() error, <-chan error)
+
 	// LoadJSONFile loads key-value pairs from a json file.
 	LoadJSONFile(path string) error
 
@@ -44,6 +53,15 @@ import "github.com/Clarilab/envi/v2"
 
 	// LoadYAML loads key-value pairs from one or many yaml blobs.
 	LoadYAML(...[]byte) error
+
+	// LoadAndWatchYAMLFile loads key-value pairs from a yaml file,
+	// then watches that file and reloads it when it changes.
+	// Accepts optional callback functions that are executed
+	// after the file was reloaded. Returns and error when something
+	// goes wrong. When no error is returned, returns a close function
+	// that should be deferred in the calling function, and an error
+	// channel where errors that occur during the file watching get sent.
+	LoadAndWatchYAMLFile(path string, callbacks ...func() error,) (error, func() error, <-chan error)
 
 	// LoadYAMLFile loads key-value pairs from a yaml file.
 	LoadYAMLFile(path string) error 

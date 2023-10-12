@@ -1,11 +1,16 @@
-package envi
+package envi_test
 
 import (
+	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
+	"github.com/Clarilab/envi/v2"
 	"github.com/stretchr/testify/assert"
+	"gopkg.in/yaml.v2"
 )
 
 func Test_FromMap(t *testing.T) {
@@ -13,14 +18,14 @@ func Test_FromMap(t *testing.T) {
 	payload["EDITOR"] = "vim"
 	payload["PAGER"] = "less"
 
-	e := NewEnvi()
+	e := envi.NewEnvi()
 	e.FromMap(payload)
 
 	assert.Len(t, e.ToMap(), 2)
 }
 
 func Test_LoadEnv(t *testing.T) {
-	e := NewEnvi()
+	e := envi.NewEnvi()
 	e.LoadEnv("EDITOR", "PAGER", "HOME")
 
 	assert.Len(t, e.ToMap(), 3)
@@ -28,7 +33,7 @@ func Test_LoadEnv(t *testing.T) {
 
 func Test_LoadJSONFromFile(t *testing.T) {
 	t.Run("no file", func(t *testing.T) {
-		e := NewEnvi()
+		e := envi.NewEnvi()
 		err := e.LoadJSONFiles()
 
 		assert.NoError(t, err)
@@ -36,7 +41,7 @@ func Test_LoadJSONFromFile(t *testing.T) {
 	})
 
 	t.Run("a valid json file", func(t *testing.T) {
-		e := NewEnvi()
+		e := envi.NewEnvi()
 		err := e.LoadJSONFiles("testdata/valid1.json")
 
 		assert.NoError(t, err)
@@ -44,7 +49,7 @@ func Test_LoadJSONFromFile(t *testing.T) {
 	})
 
 	t.Run("2 valid json files", func(t *testing.T) {
-		e := NewEnvi()
+		e := envi.NewEnvi()
 		err := e.LoadJSONFiles("testdata/valid1.json", "testdata/valid2.json")
 
 		assert.NoError(t, err)
@@ -52,14 +57,14 @@ func Test_LoadJSONFromFile(t *testing.T) {
 	})
 
 	t.Run("an invalid json file", func(t *testing.T) {
-		e := NewEnvi()
+		e := envi.NewEnvi()
 		err := e.LoadJSONFiles("testdata/invalid.json")
 
 		assert.Error(t, err)
 	})
 
 	t.Run("a missing file", func(t *testing.T) {
-		e := NewEnvi()
+		e := envi.NewEnvi()
 		err := e.LoadJSONFiles("testdata/idontexist.json")
 
 		assert.Error(t, err)
@@ -68,7 +73,7 @@ func Test_LoadJSONFromFile(t *testing.T) {
 
 func Test_LoadYAMLFomFile(t *testing.T) {
 	t.Run("no file", func(t *testing.T) {
-		e := NewEnvi()
+		e := envi.NewEnvi()
 		err := e.LoadYAMLFiles()
 
 		assert.NoError(t, err)
@@ -76,7 +81,7 @@ func Test_LoadYAMLFomFile(t *testing.T) {
 	})
 
 	t.Run("a valid yaml file", func(t *testing.T) {
-		e := NewEnvi()
+		e := envi.NewEnvi()
 		err := e.LoadYAMLFiles("testdata/valid1.yaml")
 
 		assert.NoError(t, err)
@@ -84,7 +89,7 @@ func Test_LoadYAMLFomFile(t *testing.T) {
 	})
 
 	t.Run("2 valid yaml files", func(t *testing.T) {
-		e := NewEnvi()
+		e := envi.NewEnvi()
 		err := e.LoadYAMLFiles("testdata/valid1.yaml", "testdata/valid2.yaml")
 
 		assert.NoError(t, err)
@@ -92,14 +97,14 @@ func Test_LoadYAMLFomFile(t *testing.T) {
 	})
 
 	t.Run("an invalid yaml file", func(t *testing.T) {
-		e := NewEnvi()
+		e := envi.NewEnvi()
 		err := e.LoadYAMLFiles("testdata/invalid.yaml")
 
 		assert.Error(t, err)
 	})
 
 	t.Run("a missing file", func(t *testing.T) {
-		e := NewEnvi()
+		e := envi.NewEnvi()
 		err := e.LoadYAMLFiles("testdata/idontexist.yaml")
 
 		assert.Error(t, err)
@@ -112,7 +117,7 @@ func Test_EnsureVars(t *testing.T) {
 		payload["EDITOR"] = "vim"
 		payload["PAGER"] = "less"
 
-		e := NewEnvi()
+		e := envi.NewEnvi()
 		e.FromMap(payload)
 
 		err := e.EnsureVars("EDITOR", "PAGER")
@@ -125,7 +130,7 @@ func Test_EnsureVars(t *testing.T) {
 		payload["EDITOR"] = "vim"
 		payload["PAGER"] = "less"
 
-		e := NewEnvi()
+		e := envi.NewEnvi()
 		e.FromMap(payload)
 
 		err := e.EnsureVars("EDITOR", "PAGER", "HOME")
@@ -138,7 +143,7 @@ func Test_EnsureVars(t *testing.T) {
 		payload["EDITOR"] = "vim"
 		payload["PAGER"] = "less"
 
-		e := NewEnvi()
+		e := envi.NewEnvi()
 		e.FromMap(payload)
 
 		err := e.EnsureVars("HOME", "MAIL", "URL")
@@ -151,7 +156,7 @@ func Test_ToEnv(t *testing.T) {
 	payload := make(map[string]string)
 	payload["SCHURZLPURZ"] = "yes, indeed"
 
-	e := NewEnvi()
+	e := envi.NewEnvi()
 	e.FromMap(payload)
 
 	e.ToEnv()
@@ -164,7 +169,7 @@ func Test_ToMap(t *testing.T) {
 	payload["EDITOR"] = "vim"
 	payload["PAGER"] = "less"
 
-	e := NewEnvi()
+	e := envi.NewEnvi()
 	e.FromMap(payload)
 
 	vars := e.ToMap()
@@ -174,7 +179,7 @@ func Test_ToMap(t *testing.T) {
 
 func Test_LoadFile(t *testing.T) {
 	t.Run("no file", func(t *testing.T) {
-		e := NewEnvi()
+		e := envi.NewEnvi()
 		err := e.LoadFile("FILE", "")
 
 		assert.Error(t, err)
@@ -182,7 +187,7 @@ func Test_LoadFile(t *testing.T) {
 	})
 
 	t.Run("file with string content", func(t *testing.T) {
-		e := NewEnvi()
+		e := envi.NewEnvi()
 		err := e.LoadFile("FILE", filepath.Join("testdata/valid.txt"))
 
 		assert.NoError(t, err)
@@ -211,7 +216,7 @@ func Test_LoadYAMLFilesFromEnvPaths(t *testing.T) {
 		err := os.Setenv(filePath, "testdata/valid1.yaml")
 		assert.NoError(t, err)
 
-		e := NewEnvi()
+		e := envi.NewEnvi()
 		err = e.LoadYAMLFilesFromEnvPaths(filePath)
 		assert.NoError(t, err)
 
@@ -240,7 +245,7 @@ func Test_LoadYAMLFilesFromEnvPaths(t *testing.T) {
 		err = os.Setenv(filePath2, "testdata/valid2.yaml")
 		assert.NoError(t, err)
 
-		e := NewEnvi()
+		e := envi.NewEnvi()
 		err = e.LoadYAMLFilesFromEnvPaths(filePath, filePath2)
 		assert.NoError(t, err)
 
@@ -262,7 +267,7 @@ func Test_LoadYAMLFilesFromEnvPaths(t *testing.T) {
 		err := os.Setenv(filePath, "/file/does/not/exist")
 		assert.NoError(t, err)
 
-		e := NewEnvi()
+		e := envi.NewEnvi()
 		err = e.LoadYAMLFilesFromEnvPaths(filePath)
 		assert.Error(t, err)
 
@@ -271,7 +276,7 @@ func Test_LoadYAMLFilesFromEnvPaths(t *testing.T) {
 	})
 
 	t.Run("env not found", func(t *testing.T) {
-		e := NewEnvi()
+		e := envi.NewEnvi()
 		err := e.LoadYAMLFilesFromEnvPaths(filePath)
 		assert.Error(t, err)
 	})
@@ -297,7 +302,7 @@ func Test_LoadJSONFilesFromEnvPaths(t *testing.T) {
 		err := os.Setenv(filePath, "testdata/valid1.json")
 		assert.NoError(t, err)
 
-		e := NewEnvi()
+		e := envi.NewEnvi()
 		err = e.LoadJSONFilesFromEnvPaths(filePath)
 		assert.NoError(t, err)
 
@@ -326,7 +331,7 @@ func Test_LoadJSONFilesFromEnvPaths(t *testing.T) {
 		err = os.Setenv(filePath2, "testdata/valid2.json")
 		assert.NoError(t, err)
 
-		e := NewEnvi()
+		e := envi.NewEnvi()
 		err = e.LoadJSONFilesFromEnvPaths(filePath, filePath2)
 		assert.NoError(t, err)
 
@@ -348,7 +353,7 @@ func Test_LoadJSONFilesFromEnvPaths(t *testing.T) {
 		err := os.Setenv(filePath, "/file/does/not/exist")
 		assert.NoError(t, err)
 
-		e := NewEnvi()
+		e := envi.NewEnvi()
 		err = e.LoadJSONFilesFromEnvPaths(filePath)
 		assert.Error(t, err)
 
@@ -357,7 +362,7 @@ func Test_LoadJSONFilesFromEnvPaths(t *testing.T) {
 	})
 
 	t.Run("env not found", func(t *testing.T) {
-		e := NewEnvi()
+		e := envi.NewEnvi()
 		err := e.LoadJSONFilesFromEnvPaths(filePath)
 		assert.Error(t, err)
 	})
@@ -377,7 +382,7 @@ func Test_LoadFileFromEnvPath(t *testing.T) {
 		err := os.Setenv(filePath, "testdata/valid.txt")
 		assert.NoError(t, err)
 
-		e := NewEnvi()
+		e := envi.NewEnvi()
 		err = e.LoadFileFromEnvPath(key, filePath)
 		assert.NoError(t, err)
 
@@ -396,7 +401,7 @@ func Test_LoadFileFromEnvPath(t *testing.T) {
 		err := os.Setenv(filePath, "/file/does/not/exist")
 		assert.NoError(t, err)
 
-		e := NewEnvi()
+		e := envi.NewEnvi()
 		err = e.LoadFileFromEnvPath(key, filePath)
 		assert.Error(t, err)
 
@@ -405,8 +410,265 @@ func Test_LoadFileFromEnvPath(t *testing.T) {
 	})
 
 	t.Run("env not found", func(t *testing.T) {
-		e := NewEnvi()
+		e := envi.NewEnvi()
 		err := e.LoadFileFromEnvPath(key, filePath)
 		assert.Error(t, err)
 	})
+}
+
+func Test_LoadAndWatchFile(t *testing.T) {
+	const (
+		fooKey        = "foo"
+		quoKey        = "quo"
+		initialFooVal = "bar"
+		initialQuoVal = "qux"
+		changedQuoVal = "baz"
+	)
+
+	testConfig := struct {
+		Foo string `json:"foo"`
+		Quo string `json:"quo"`
+	}{}
+
+	callbackProof := struct {
+		wasCalled bool
+	}{}
+
+	watcherCallback := func() error {
+		callbackProof.wasCalled = true
+		return nil
+	}
+
+	t.Run("yaml file", func(t *testing.T) {
+		const configFilePath = "testdata/watchme.yaml"
+
+		testConfig.Foo = initialFooVal
+		testConfig.Quo = initialQuoVal
+		callbackProof.wasCalled = false
+
+		// write a yaml file to disk
+		blob, err := yaml.Marshal(testConfig)
+		assert.NoError(t, err)
+
+		err = os.WriteFile(configFilePath, blob, 0644)
+		assert.NoError(t, err)
+
+		// load and watch the yaml file
+		e := envi.NewEnvi()
+
+		err, closeFunc, _ := e.LoadAndWatchYAMLFile(configFilePath, watcherCallback)
+		assert.NoError(t, err)
+
+		t.Cleanup(func() {
+			err := closeFunc()
+			if err != nil {
+				t.Logf("Failed to close watcher: %v", err)
+			}
+
+			os.Remove(configFilePath)
+		})
+
+		assert.NoError(t, err)
+
+		err = e.EnsureVars(fooKey, quoKey)
+		assert.NoError(t, err)
+
+		// change the file
+		testConfig.Quo = changedQuoVal
+
+		newBlob, err := yaml.Marshal(testConfig)
+		assert.NoError(t, err)
+
+		err = os.WriteFile(configFilePath, newBlob, 0644)
+		assert.NoError(t, err)
+
+		// Wait for changes to take effect (without this, the test fails)
+		time.Sleep(100 * time.Millisecond)
+
+		// assert the change is noticed and reflected
+		confMap := e.ToMap()
+
+		newQuo, ok := confMap[quoKey]
+		assert.True(t, ok)
+		assert.Equal(t, changedQuoVal, newQuo)
+
+		// assert the callback has been executed
+		assert.True(t, callbackProof.wasCalled)
+	})
+
+	t.Run("json file", func(t *testing.T) {
+		const configFilePath = "testdata/watchme.json"
+
+		testConfig.Foo = initialFooVal
+		testConfig.Quo = initialQuoVal
+		callbackProof.wasCalled = false
+
+		// write a json file to disk
+		blob, err := json.Marshal(testConfig)
+		assert.NoError(t, err)
+
+		err = os.WriteFile(configFilePath, blob, 0644)
+		assert.NoError(t, err)
+
+		// load and watch the json file
+		e := envi.NewEnvi()
+
+		err, closeFunc, _ := e.LoadAndWatchJSONFile(configFilePath, watcherCallback)
+		assert.NoError(t, err)
+
+		t.Cleanup(func() {
+			err := closeFunc()
+			if err != nil {
+				t.Logf("Failed to close watcher: %v", err)
+			}
+
+			os.Remove(configFilePath)
+		})
+
+		assert.NoError(t, err)
+
+		err = e.EnsureVars(fooKey, quoKey)
+		assert.NoError(t, err)
+
+		// change the file
+		testConfig.Quo = changedQuoVal
+
+		newBlob, err := json.Marshal(testConfig)
+		assert.NoError(t, err)
+
+		err = os.WriteFile(configFilePath, newBlob, 0644)
+		assert.NoError(t, err)
+
+		// Wait for changes to take effect (without this, the test fails)
+		time.Sleep(100 * time.Millisecond)
+
+		// assert the change is noticed and reflected
+		confMap := e.ToMap()
+
+		newQuo, ok := confMap[quoKey]
+		assert.True(t, ok)
+		assert.Equal(t, changedQuoVal, newQuo)
+
+		// assert the callback has been executed
+		assert.True(t, callbackProof.wasCalled)
+	})
+
+	t.Run("nonexistent file returns error", func(t *testing.T) {
+		const configFilePath = "I/do/not/exist"
+
+		e := envi.NewEnvi()
+
+		err, _, _ := e.LoadAndWatchJSONFile(configFilePath, nil)
+		assert.Error(t, err)
+	})
+
+	t.Run("file removed during the watching sends error over channel", func(t *testing.T) {
+		const configFilePath = "testdata/watchmegetremoved.json"
+
+		testConfig.Foo = initialFooVal
+		testConfig.Quo = initialQuoVal
+		callbackProof.wasCalled = false
+
+		blob, err := json.Marshal(testConfig)
+		assert.NoError(t, err)
+
+		err = os.WriteFile(configFilePath, blob, 0644)
+		assert.NoError(t, err)
+
+		// load and watch the json file
+		e := envi.NewEnvi()
+
+		err, closeFunc, watchErrChan := e.LoadAndWatchJSONFile(configFilePath, watcherCallback)
+		assert.NoError(t, err)
+
+		t.Cleanup(func() {
+			err := closeFunc()
+			if err != nil {
+				t.Logf("Failed to close watcher: %v", err)
+			}
+		})
+
+		var watchErrors []error
+
+		go func() {
+			for {
+				err, ok := <-watchErrChan
+				if !ok {
+					return
+				}
+
+				watchErrors = append(watchErrors, err)
+			}
+		}()
+
+		time.Sleep(100 * time.Millisecond)
+
+		os.Remove(configFilePath)
+
+		time.Sleep(100 * time.Millisecond)
+
+		assert.NotEmpty(t, watchErrors)
+
+		assert.False(t, callbackProof.wasCalled)
+	})
+
+	t.Run("error during callback execution gets sent over channel", func(t *testing.T) {
+		const configFilePath = "testdata/watchme.json"
+
+		testConfig.Foo = initialFooVal
+		testConfig.Quo = initialQuoVal
+		callbackProof.wasCalled = false
+
+		blob, err := json.Marshal(testConfig)
+		assert.NoError(t, err)
+
+		err = os.WriteFile(configFilePath, blob, 0644)
+		assert.NoError(t, err)
+
+		callbackThatTrowsError := func() error {
+			return errors.New("Oh snap!")
+		}
+
+		// load and watch the json file
+		e := envi.NewEnvi()
+
+		err, closeFunc, watchErrChan := e.LoadAndWatchJSONFile(configFilePath, callbackThatTrowsError)
+		assert.NoError(t, err)
+
+		t.Cleanup(func() {
+			err := closeFunc()
+			if err != nil {
+				t.Logf("Failed to close watcher: %v", err)
+			}
+
+			os.Remove(configFilePath)
+		})
+
+		var watchErrors []error
+
+		go func() {
+			for {
+				err, ok := <-watchErrChan
+				if !ok {
+					return
+				}
+
+				watchErrors = append(watchErrors, err)
+			}
+		}()
+
+		// change the file
+		testConfig.Quo = changedQuoVal
+
+		newBlob, err := json.Marshal(testConfig)
+		assert.NoError(t, err)
+
+		err = os.WriteFile(configFilePath, newBlob, 0644)
+		assert.NoError(t, err)
+
+		time.Sleep(100 * time.Millisecond)
+
+		assert.NotEmpty(t, watchErrors)
+	})
+
 }

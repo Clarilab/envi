@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/fsnotify/fsnotify"
 	"gopkg.in/yaml.v2"
 )
 
@@ -133,6 +134,24 @@ func (envi *Envi) LoadJSONFile(path string) error {
 	return nil
 }
 
+// LoadAndWatchJSONFile loads key-value pairs from a json file,
+// then watches that file and reloads it when it changes.
+// Accepts optional callback functions that are executed
+// after the file was reloaded. Returns and error when something
+// goes wrong. When no error is returned, returns a close function
+// that should be deferred in the calling function, and an error
+// channel where errors that occur during the file watching get sent.
+func (envi *Envi) LoadAndWatchJSONFile(path string, callback ...func() error) (error, func() error, <-chan error) {
+	const errMessage = "failed to load and watch json file: %w"
+
+	err, closeFunc, watchErrChan := envi.loadAndWatchFile(path, envi.LoadJSONFile, callback...)
+	if err != nil {
+		return fmt.Errorf(errMessage, err), nil, nil
+	}
+
+	return nil, closeFunc, watchErrChan
+}
+
 // LoadJSON loads key-value pairs from one or many json blobs.
 func (envi *Envi) LoadJSON(blobs ...[]byte) error {
 	const errMessage = "failed to load json: %w"
@@ -183,6 +202,24 @@ func (envi *Envi) LoadYAMLFile(path string) error {
 	return nil
 }
 
+// LoadAndWatchYAMLFile loads key-value pairs from a yaml file,
+// then watches that file and reloads it when it changes.
+// Accepts optional callback functions that are executed
+// after the file was reloaded. Returns and error when something
+// goes wrong. When no error is returned, returns a close function
+// that should be deferred in the calling function, and an error
+// channel where errors that occur during the file watching get sent.
+func (envi *Envi) LoadAndWatchYAMLFile(path string, callbacks ...func() error) (error, func() error, <-chan error) {
+	const errMessage = "failed to load and watch yaml file: %w"
+
+	err, closeFunc, watchErrChan := envi.loadAndWatchFile(path, envi.LoadYAMLFile, callbacks...)
+	if err != nil {
+		return fmt.Errorf(errMessage, err), nil, nil
+	}
+
+	return nil, closeFunc, watchErrChan
+}
+
 // LoadYAML loads key-value pairs from one or many yaml blobs.
 func (envi *Envi) LoadYAML(blobs ...[]byte) error {
 	const errMessage = "failed to load yaml file: %w"
@@ -230,4 +267,80 @@ func (envi *Envi) ToEnv() {
 // ToMap returns a map, containing all key-value pairs.
 func (envi *Envi) ToMap() map[string]string {
 	return envi.loadedVars
+}
+
+func (envi *Envi) loadAndWatchFile(
+	path string,
+	loadFunc func(string) error,
+	callbacks ...func() error,
+) (error, func() error, <-chan error) {
+	const (
+		errMessage        = "failed to load and watch file: %w"
+		errChanBufferSize = 10
+	)
+
+	err := loadFunc(path)
+	if err != nil {
+		return fmt.Errorf(errMessage, err), nil, nil
+	}
+
+	watcher, err := fsnotify.NewWatcher()
+	if err != nil {
+		return fmt.Errorf(errMessage, err), nil, nil
+	}
+
+	watchErrChan := make(chan error, errChanBufferSize)
+
+	go envi.fileWatcher(watcher, path, loadFunc, watchErrChan, callbacks...)
+
+	err = watcher.Add(path)
+	if err != nil {
+		watcher.Close()
+		return fmt.Errorf(errMessage, err), nil, nil
+	}
+
+	return nil, watcher.Close, watchErrChan
+}
+
+func (envi *Envi) fileWatcher(
+	watcher *fsnotify.Watcher,
+	filePath string,
+	loadFunc func(string) error,
+	watchErrChan chan<- error,
+	callbacks ...func() error,
+) {
+	for {
+		select {
+		case event, ok := <-watcher.Events:
+			if !ok {
+				return
+			}
+
+			if event.Has(fsnotify.Chmod) || event.Has(fsnotify.Write) {
+				err := loadFunc(filePath)
+				if err != nil {
+					watchErrChan <- fmt.Errorf("error reloading watched file: %w", err)
+					continue
+				}
+
+				for i := range callbacks {
+					err = callbacks[i]()
+					if err != nil {
+						watchErrChan <- fmt.Errorf("error executing callback for watched file: %w", err)
+					}
+				}
+			} else if event.Has(fsnotify.Remove) {
+				err := watcher.Add(filePath)
+				if err != nil {
+					watchErrChan <- fmt.Errorf("error reenabling watcher for file: %w", err)
+				}
+			}
+		case err, ok := <-watcher.Errors:
+			if !ok {
+				return
+			}
+
+			watchErrChan <- fmt.Errorf("error while watching file: %w", err)
+		}
+	}
 }
