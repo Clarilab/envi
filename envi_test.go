@@ -459,15 +459,14 @@ func Test_LoadAndWatchFile(t *testing.T) {
 		err, closeFunc, _ := e.LoadAndWatchYAMLFile(configFilePath, watcherCallback)
 		assert.NoError(t, err)
 
-		// cleanup
-		defer func() {
+		t.Cleanup(func() {
 			err := closeFunc()
 			if err != nil {
 				t.Logf("Failed to close watcher: %v", err)
 			}
 
 			os.Remove(configFilePath)
-		}()
+		})
 
 		assert.NoError(t, err)
 
@@ -517,15 +516,14 @@ func Test_LoadAndWatchFile(t *testing.T) {
 		err, closeFunc, _ := e.LoadAndWatchJSONFile(configFilePath, watcherCallback)
 		assert.NoError(t, err)
 
-		// cleanup
-		defer func() {
+		t.Cleanup(func() {
 			err := closeFunc()
 			if err != nil {
 				t.Logf("Failed to close watcher: %v", err)
 			}
 
 			os.Remove(configFilePath)
-		}()
+		})
 
 		assert.NoError(t, err)
 
@@ -583,12 +581,12 @@ func Test_LoadAndWatchFile(t *testing.T) {
 		err, closeFunc, watchErrChan := e.LoadAndWatchJSONFile(configFilePath, watcherCallback)
 		assert.NoError(t, err)
 
-		defer func() {
+		t.Cleanup(func() {
 			err := closeFunc()
 			if err != nil {
 				t.Logf("Failed to close watcher: %v", err)
 			}
-		}()
+		})
 
 		var watchErrors []error
 
@@ -637,15 +635,14 @@ func Test_LoadAndWatchFile(t *testing.T) {
 		err, closeFunc, watchErrChan := e.LoadAndWatchJSONFile(configFilePath, callbackThatTrowsError)
 		assert.NoError(t, err)
 
-		// cleanup
-		defer func() {
+		t.Cleanup(func() {
 			err := closeFunc()
 			if err != nil {
 				t.Logf("Failed to close watcher: %v", err)
 			}
 
 			os.Remove(configFilePath)
-		}()
+		})
 
 		var watchErrors []error
 
