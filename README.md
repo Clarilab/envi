@@ -36,6 +36,10 @@ import "github.com/Clarilab/envi/v2"
 	// LoadJSON loads key-value pairs from one or many json blobs.
 	LoadJSON(...[]byte) error
 
+	// LoadJSONPrefixed loads key-value pairs from one or many json blobs
+	// and prefixes the keys from the blobs with the given string.
+	LoadJSONPrefixed(prefix string, blobs ...[]byte) error
+
 	// LoadAndWatchJSONFile loads key-value pairs from a json file,
 	// then watches that file and reloads it when it changes.
 	// Accepts optional callback functions that are executed
@@ -45,14 +49,27 @@ import "github.com/Clarilab/envi/v2"
 	// channel where errors that occur during the file watching get sent.
 	LoadAndWatchJSONFile(path string, callbacks ...func() error) (error, func() error, <-chan error)
 
+	// LoadAndWatchJSONFilePrefixed works exactly as LoadAndWatchJSONFile,
+	// except it prefixes the keys of the loaded variables with the given
+	// string.
+	LoadAndWatchJSONFilePrefixed(prefix, path string, callback ...func() error) (error, func() error, <-chan error)
+
 	// LoadJSONFile loads key-value pairs from a json file.
 	LoadJSONFile(path string) error
+
+	// LoadJSONFilePrefixed loads key-value pairs from a json file
+	// and prefixes the keys from the file with the given string.
+	LoadJSONFilePrefixed(prefix, path string) error
 
 	// LoadJSONFiles loads key-value pairs from one or more json files.
 	LoadJSONFiles(...string) error
 
 	// LoadYAML loads key-value pairs from one or many yaml blobs.
 	LoadYAML(...[]byte) error
+
+	// LoadYAMLPrefixed loads key-value pairs from one or many yaml blobs
+	// and prefixes the keys from the blobs with the given string.
+	LoadYAMLPrefixed(prefix string, blobs ...[]byte) error
 
 	// LoadAndWatchYAMLFile loads key-value pairs from a yaml file,
 	// then watches that file and reloads it when it changes.
@@ -63,8 +80,17 @@ import "github.com/Clarilab/envi/v2"
 	// channel where errors that occur during the file watching get sent.
 	LoadAndWatchYAMLFile(path string, callbacks ...func() error,) (error, func() error, <-chan error)
 
+	// LoadAndWatchYAMLFilePrefixed works exactly as LoadAndWatchYAMLFile,
+	// except it prefixes the keys of the loaded variables with the given
+	// string.
+	LoadAndWatchYAMLFilePrefixed(prefix, path string, callbacks ...func() error) (error, func() error, <-chan error)
+
 	// LoadYAMLFile loads key-value pairs from a yaml file.
 	LoadYAMLFile(path string) error 
+
+	// LoadYAMLFilePrefixed loads key-value pairs from a yaml file
+	// and prefixes the keys from the file with the given string.
+	LoadYAMLFilePrefixed(prefix, path string) error
 
 	// LoadYAMLFiles loads key-value pairs from one or more yaml files.
 	LoadYAMLFiles(...string) error

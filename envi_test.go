@@ -672,3 +672,159 @@ func Test_LoadAndWatchFile(t *testing.T) {
 	})
 
 }
+
+func Test_LoadWithPrefix(t *testing.T) {
+	t.Run("json file", func(t *testing.T) {
+		const (
+			filePath   = "testdata/valid1.json"
+			urlKey     = "URL"
+			testPrefix = "test_"
+		)
+
+		e := envi.NewEnvi()
+
+		err := e.LoadJSONFilePrefixed(testPrefix, filePath)
+		assert.NoError(t, err)
+
+		err = e.EnsureVars(testPrefix + urlKey)
+		assert.NoError(t, err)
+	})
+
+	t.Run("yaml file", func(t *testing.T) {
+		const (
+			filePath   = "testdata/valid1.yaml"
+			shellKey   = "SHELL"
+			testPrefix = "test_"
+		)
+
+		e := envi.NewEnvi()
+
+		err := e.LoadYAMLFilePrefixed(testPrefix, filePath)
+		assert.NoError(t, err)
+
+		err = e.EnsureVars(testPrefix + shellKey)
+		assert.NoError(t, err)
+	})
+
+	t.Run("watched file", func(t *testing.T) {
+		const (
+			fooKey        = "foo"
+			quoKey        = "quo"
+			initialFooVal = "bar"
+			initialQuoVal = "qux"
+			changedQuoVal = "baz"
+			testPrefix    = "test_"
+		)
+
+		testConfig := struct {
+			Foo string `json:"foo"`
+			Quo string `json:"quo"`
+		}{}
+
+		t.Run("yaml", func(t *testing.T) {
+			const configFilePath = "testdata/watchme.yaml"
+
+			testConfig.Foo = initialFooVal
+			testConfig.Quo = initialQuoVal
+
+			blob, err := yaml.Marshal(testConfig)
+			assert.NoError(t, err)
+
+			err = os.WriteFile(configFilePath, blob, 0644)
+			assert.NoError(t, err)
+
+			e := envi.NewEnvi()
+
+			err, closeFunc, _ := e.LoadAndWatchYAMLFilePrefixed(testPrefix, configFilePath)
+			assert.NoError(t, err)
+
+			t.Cleanup(func() {
+				err := closeFunc()
+				if err != nil {
+					t.Logf("error closing watcher: %v", err)
+				}
+
+				os.Remove(configFilePath)
+			})
+
+			err = e.EnsureVars(testPrefix+fooKey, testPrefix+quoKey)
+			assert.NoError(t, err)
+
+			// change the file
+			testConfig.Quo = changedQuoVal
+
+			newBlob, err := yaml.Marshal(testConfig)
+			assert.NoError(t, err)
+
+			err = os.WriteFile(configFilePath, newBlob, 0644)
+			assert.NoError(t, err)
+
+			// Wait for changes to take effect (without this, the test fails)
+			time.Sleep(100 * time.Millisecond)
+
+			// assert that everything is still prefixed
+			err = e.EnsureVars(testPrefix+fooKey, testPrefix+quoKey)
+			assert.NoError(t, err)
+
+			// assert the change is noticed and reflected
+			confMap := e.ToMap()
+
+			newQuo, ok := confMap[testPrefix+quoKey]
+			assert.True(t, ok)
+			assert.Equal(t, changedQuoVal, newQuo)
+		})
+
+		t.Run("json", func(t *testing.T) {
+			const configFilePath = "testdata/watchme.json"
+
+			testConfig.Foo = initialFooVal
+			testConfig.Quo = initialQuoVal
+
+			blob, err := json.Marshal(testConfig)
+			assert.NoError(t, err)
+
+			err = os.WriteFile(configFilePath, blob, 0644)
+			assert.NoError(t, err)
+
+			e := envi.NewEnvi()
+
+			err, closeFunc, _ := e.LoadAndWatchJSONFilePrefixed(testPrefix, configFilePath)
+			assert.NoError(t, err)
+
+			t.Cleanup(func() {
+				err := closeFunc()
+				if err != nil {
+					t.Logf("error closing watcher: %v", err)
+				}
+
+				os.Remove(configFilePath)
+			})
+
+			err = e.EnsureVars(testPrefix+fooKey, testPrefix+quoKey)
+			assert.NoError(t, err)
+
+			// change the file
+			testConfig.Quo = changedQuoVal
+
+			newBlob, err := json.Marshal(testConfig)
+			assert.NoError(t, err)
+
+			err = os.WriteFile(configFilePath, newBlob, 0644)
+			assert.NoError(t, err)
+
+			// Wait for changes to take effect (without this, the test fails)
+			time.Sleep(100 * time.Millisecond)
+
+			// assert that everything is still prefixed
+			err = e.EnsureVars(testPrefix+fooKey, testPrefix+quoKey)
+			assert.NoError(t, err)
+
+			// assert the change is noticed and reflected
+			confMap := e.ToMap()
+
+			newQuo, ok := confMap[testPrefix+quoKey]
+			assert.True(t, ok)
+			assert.Equal(t, changedQuoVal, newQuo)
+		})
+	})
+}
