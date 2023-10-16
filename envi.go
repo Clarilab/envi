@@ -19,6 +19,7 @@ type Envi struct {
 // NewEnvi creates a new Envi instance.
 func NewEnvi() *Envi {
 	return &Envi{
+		mu:         sync.Mutex{},
 		loadedVars: make(map[string]string),
 	}
 }
