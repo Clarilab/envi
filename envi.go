@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"sync"
 
 	"github.com/fsnotify/fsnotify"
 	"gopkg.in/yaml.v2"
@@ -11,6 +12,7 @@ import (
 
 // Envi is a config loader to load all sorts of configuration files.
 type Envi struct {
+	mu         sync.Mutex
 	loadedVars map[string]string
 }
 
@@ -23,16 +25,24 @@ func NewEnvi() *Envi {
 
 // FromMap loads the given key-value pairs and loads them into the local map.
 func (envi *Envi) FromMap(vars map[string]string) {
+	envi.mu.Lock()
+
 	for key := range vars {
 		envi.loadedVars[key] = vars[key]
 	}
+
+	envi.mu.Unlock()
 }
 
 // LoadEnv loads the given keys from the environment variables.
 func (envi *Envi) LoadEnv(vars ...string) {
+	envi.mu.Lock()
+
 	for _, key := range vars {
 		envi.loadedVars[key] = os.Getenv(key)
 	}
+
+	envi.mu.Unlock()
 }
 
 // LoadYAMLFilesFromEnvPaths loads yaml files from the paths in the given environment variables.
@@ -99,7 +109,9 @@ func (envi *Envi) LoadFile(key, filePath string) error {
 		return fmt.Errorf(errMessage, &FailedToReadFileError{filePath})
 	}
 
+	envi.mu.Lock()
 	envi.loadedVars[key] = string(blob)
+	envi.mu.Unlock()
 
 	return nil
 }
@@ -164,9 +176,13 @@ func (envi *Envi) LoadJSON(blobs ...[]byte) error {
 			return fmt.Errorf(errMessage, err)
 		}
 
+		envi.mu.Lock()
+
 		for key := range decoded {
 			envi.loadedVars[key] = decoded[key]
 		}
+
+		envi.mu.Unlock()
 	}
 
 	return nil
@@ -232,9 +248,13 @@ func (envi *Envi) LoadYAML(blobs ...[]byte) error {
 			return fmt.Errorf(errMessage, err)
 		}
 
+		envi.mu.Lock()
+
 		for key := range decoded {
 			envi.loadedVars[key] = decoded[key]
 		}
+
+		envi.mu.Unlock()
 	}
 
 	return nil
