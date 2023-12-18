@@ -24,12 +24,14 @@ const (
 )
 
 func Test_YAMLFileWatcher(t *testing.T) {
-	orignialData := fmt.Sprintf("%s: test-user-1\n%s: test-password-1\n", userName, password)
+	initialData := fmt.Sprintf("%s: test-user-1\n%s: test-password-1\n", userName, password)
 
-	// write original data
-	if err := os.WriteFile(yamlFilePath, []byte(orignialData), 0644); err != nil {
+	// write initialData data
+	if err := os.WriteFile(yamlFilePath, []byte(initialData), 0644); err != nil {
 		t.Fatal(err)
 	}
+
+	time.Sleep(1 * time.Second) // wait for the changes to be written
 
 	triggerChan := make(chan struct{}, 1)
 
@@ -40,6 +42,8 @@ func Test_YAMLFileWatcher(t *testing.T) {
 	go func() {
 		for range triggerChan {
 			wg.Done()
+
+			return // return to not react on the error test write
 		}
 	}()
 
@@ -63,7 +67,7 @@ func Test_YAMLFileWatcher(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// assert that the loaded config is the same as original data
+	// assert that the loaded config is the same as initial data
 	if config[keyUserName] != "test-user-1" || config[keyPassword] != "test-password-1" {
 		t.Error(err)
 	}
@@ -94,17 +98,21 @@ func Test_YAMLFileWatcher(t *testing.T) {
 			t.Fatal(err)
 		}
 
+		time.Sleep(1 * time.Second) // wait for the changes to be written
+
 		errWG.Wait() // wait for error channel to get called
 	})
 }
 
 func Test_JSONFileWatcher(t *testing.T) {
-	originalData := fmt.Sprintf(`{"%s": "test-user-1", "%s": "test-password-1"}`, userName, password)
+	initialData := fmt.Sprintf(`{"%s": "test-user-1", "%s": "test-password-1"}`, userName, password)
 
-	// write original data
-	if err := os.WriteFile(jsonFilePath, []byte(originalData), 0644); err != nil {
+	// write initial data
+	if err := os.WriteFile(jsonFilePath, []byte(initialData), 0644); err != nil {
 		t.Fatal(err)
 	}
+
+	time.Sleep(1 * time.Second) // wait for the changes to be written
 
 	triggerChan := make(chan struct{}, 1)
 
@@ -115,6 +123,8 @@ func Test_JSONFileWatcher(t *testing.T) {
 	go func() {
 		for range triggerChan {
 			wg.Done()
+
+			return
 		}
 	}()
 
@@ -138,7 +148,7 @@ func Test_JSONFileWatcher(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// assert that the loaded config is the same as original data
+	// assert that the loaded config is the same as initial data
 	if config[keyUserName] != "test-user-1" || config[keyPassword] != "test-password-1" {
 		t.Error(err)
 	}
@@ -210,6 +220,8 @@ func setupWatcher(t *testing.T, config map[string]string, w *filewatch.FileWatch
 
 		for range errChan {
 			wg.Done()
+
+			return
 		}
 	}()
 
