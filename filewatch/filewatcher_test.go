@@ -1,6 +1,7 @@
 package filewatch_test
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"sync"
@@ -25,6 +26,8 @@ const (
 
 func Test_YAMLFileWatcher(t *testing.T) {
 	initialData := fmt.Sprintf("%s: test-user-1\n%s: test-password-1\n", userName, password)
+	overwriteData := fmt.Sprintf("%s: test-user-2\n%s: test-password-2\n", userName, password)
+	invalidOverwriteData := "invalid-overwrite-data"
 
 	// write initialData data
 	if err := os.WriteFile(yamlFilePath, []byte(initialData), 0644); err != nil {
@@ -47,8 +50,8 @@ func Test_YAMLFileWatcher(t *testing.T) {
 		}
 	}()
 
-	// create a new file watcher
-	watcher := filewatch.NewYAMLFileWatcher(yamlFilePath, prefix, triggerChan)
+	// declare a new file watcher with prefix / without setting loader while declaring
+	watcher := filewatch.NewYAMLFileWatcher(yamlFilePath, filewatch.WithPrefix(prefix), filewatch.WithTriggerChannels(triggerChan))
 	t.Cleanup(func() {
 		if err := watcher.Close(); err != nil {
 			t.Error(err)
@@ -56,6 +59,14 @@ func Test_YAMLFileWatcher(t *testing.T) {
 	})
 
 	var config map[string]string
+
+	t.Run("loader not set", func(t *testing.T) {
+		err := watcher.Start(config)
+		if err == nil && errors.Is(err, filewatch.ErrLoaderNotSet) == false {
+			t.Error("expected error")
+		}
+	})
+
 	var err error
 
 	// setup error check
@@ -74,8 +85,6 @@ func Test_YAMLFileWatcher(t *testing.T) {
 
 	t.Run("happy path", func(t *testing.T) {
 		// overwrite config files
-		overwriteData := fmt.Sprintf("%s: test-user-2\n%s: test-password-2\n", userName, password)
-
 		if err := os.WriteFile(yamlFilePath, []byte(overwriteData), 0644); err != nil {
 			t.Fatal(err)
 		}
@@ -90,10 +99,8 @@ func Test_YAMLFileWatcher(t *testing.T) {
 		wg.Wait() // wait for triggers to get called
 	})
 
-	t.Run("error", func(t *testing.T) {
+	t.Run("error while file watching", func(t *testing.T) {
 		// overwrite config files
-		invalidOverwriteData := "invalid-overwrite-data"
-
 		if err := os.WriteFile(yamlFilePath, []byte(invalidOverwriteData), 0644); err != nil {
 			t.Fatal(err)
 		}
@@ -102,10 +109,65 @@ func Test_YAMLFileWatcher(t *testing.T) {
 
 		errWG.Wait() // wait for error channel to get called
 	})
+
+	t.Run("without prefix and loader already set while declaring watcher", func(t *testing.T) {
+		// write initialData data
+		if err := os.WriteFile(yamlFilePath, []byte(initialData), 0644); err != nil {
+			t.Fatal(err)
+		}
+
+		time.Sleep(1 * time.Second) // wait for the changes to be written
+
+		triggerChan := make(chan struct{}, 1)
+
+		// setup trigger check
+		wg := &sync.WaitGroup{}
+		wg.Add(1)
+
+		go func() {
+			for range triggerChan {
+				wg.Done()
+
+				return
+			}
+		}()
+
+		envi := envi.NewEnvi()
+
+		// declare a new file watcher without prefix / with setting loader while declaring
+		watcher := filewatch.NewYAMLFileWatcher(yamlFilePath, filewatch.WithLoader(envi), filewatch.WithTriggerChannels(triggerChan))
+		t.Cleanup(func() {
+			if err := watcher.Close(); err != nil {
+				t.Error(err)
+			}
+		})
+
+		if err := watcher.Start(config); err != nil {
+			t.Error(err)
+		}
+
+		config = envi.ToMap() // load vars into config map
+
+		// overwrite config files
+		if err := os.WriteFile(yamlFilePath, []byte(overwriteData), 0644); err != nil {
+			t.Fatal(err)
+		}
+
+		time.Sleep(1 * time.Second) // wait for the changes to be written
+
+		// assert that the loaded config is the same as overwrite data
+		if config[userName] != "test-user-2" || config[password] != "test-password-2" {
+			t.Error(err)
+		}
+
+		wg.Wait() // wait for triggers to get called
+	})
 }
 
 func Test_JSONFileWatcher(t *testing.T) {
 	initialData := fmt.Sprintf(`{"%s": "test-user-1", "%s": "test-password-1"}`, userName, password)
+	overwriteData := fmt.Sprintf(`{"%s": "test-user-2", "%s": "test-password-2"}`, userName, password)
+	invalidOverwriteData := "invalid-overwrite-data"
 
 	// write initial data
 	if err := os.WriteFile(jsonFilePath, []byte(initialData), 0644); err != nil {
@@ -128,8 +190,8 @@ func Test_JSONFileWatcher(t *testing.T) {
 		}
 	}()
 
-	// create a new file watcher
-	watcher := filewatch.NewJSONFileWatcher(jsonFilePath, prefix, triggerChan)
+	// declare a new file watcher with prefix / without setting loader while declaring
+	watcher := filewatch.NewJSONFileWatcher(jsonFilePath, filewatch.WithPrefix(prefix), filewatch.WithTriggerChannels(triggerChan))
 	t.Cleanup(func() {
 		if err := watcher.Close(); err != nil {
 			t.Error(err)
@@ -137,6 +199,14 @@ func Test_JSONFileWatcher(t *testing.T) {
 	})
 
 	var config map[string]string
+
+	t.Run("loader not set", func(t *testing.T) {
+		err := watcher.Start(config)
+		if err == nil && errors.Is(err, filewatch.ErrLoaderNotSet) == false {
+			t.Error("expected error")
+		}
+	})
+
 	var err error
 
 	// setup error check
@@ -154,8 +224,6 @@ func Test_JSONFileWatcher(t *testing.T) {
 	}
 
 	t.Run("happy path", func(t *testing.T) {
-		overwriteData := fmt.Sprintf(`{"%s": "test-user-2", "%s": "test-password-2"}`, userName, password)
-
 		// overwrite config files
 		if err := os.WriteFile(jsonFilePath, []byte(overwriteData), 0644); err != nil {
 			t.Fatal(err)
@@ -171,15 +239,66 @@ func Test_JSONFileWatcher(t *testing.T) {
 		wg.Wait() // wait for triggers to get called
 	})
 
-	t.Run("error", func(t *testing.T) {
-		invalidOverwriteData := "invalid-overwrite-data"
-
+	t.Run("error while file watching", func(t *testing.T) {
 		// overwrite config files
 		if err := os.WriteFile(jsonFilePath, []byte(invalidOverwriteData), 0644); err != nil {
 			t.Fatal(err)
 		}
 
 		errWG.Wait() // wait for error channel to get called
+	})
+
+	t.Run("without prefix", func(t *testing.T) {
+		// write initialData data
+		if err := os.WriteFile(jsonFilePath, []byte(initialData), 0644); err != nil {
+			t.Fatal(err)
+		}
+
+		time.Sleep(1 * time.Second) // wait for the changes to be written
+
+		triggerChan := make(chan struct{}, 1)
+
+		// setup trigger check
+		wg := &sync.WaitGroup{}
+		wg.Add(1)
+
+		go func() {
+			for range triggerChan {
+				wg.Done()
+
+				return
+			}
+		}()
+
+		envi := envi.NewEnvi()
+
+		// declare a new file watcher without prefix / with setting loader while declaring
+		watcher := filewatch.NewJSONFileWatcher(jsonFilePath, filewatch.WithLoader(envi), filewatch.WithTriggerChannels(triggerChan))
+		t.Cleanup(func() {
+			if err := watcher.Close(); err != nil {
+				t.Error(err)
+			}
+		})
+
+		if err := watcher.Start(config); err != nil {
+			t.Error(err)
+		}
+
+		config = envi.ToMap() // load vars into config map
+
+		// overwrite config files
+		if err := os.WriteFile(jsonFilePath, []byte(overwriteData), 0644); err != nil {
+			t.Fatal(err)
+		}
+
+		time.Sleep(1 * time.Second) // wait for the changes to be written
+
+		// assert that the loaded config is the same as overwrite data
+		if config[userName] != "test-user-2" || config[password] != "test-password-2" {
+			t.Error(err)
+		}
+
+		wg.Wait() // wait for triggers to get called
 	})
 }
 
