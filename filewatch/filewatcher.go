@@ -51,13 +51,6 @@ func WithPrefix(prefix string) Option {
 	}
 }
 
-// WithLoader is a function that can be used to set the Loader for the FileWatcher.
-func WithLoader(loader Loader) Option {
-	return func(f *FileWatcher) {
-		f.Loader = loader
-	}
-}
-
 // WithTriggerChannels is a function that can be used to set the TriggerChannels for the FileWatcher.
 func WithTriggerChannels(triggerChannels ...TriggerChannel) Option {
 	return func(f *FileWatcher) {
@@ -67,11 +60,12 @@ func WithTriggerChannels(triggerChannels ...TriggerChannel) Option {
 
 // NewJSONFileWatcher creates a new File-Watcher that observes json files.
 // The prefix is optional and can be left empty.
-// This is useful in case you have multiple Watchers observing multiple files, which contain the same keys.
-// The prefix will be added to the key in the global ConfigMap.
-func NewJSONFileWatcher(path string, options ...Option) *FileWatcher {
+// Setting the Prefix is useful in case you have multiple Watchers observing multiple files,
+// which contain the same keys. The prefix will be added to the key in the global ConfigMap.
+func NewJSONFileWatcher(path string, loader Loader, options ...Option) *FileWatcher {
 	fw := &FileWatcher{
 		watcherType: watcherTypeJSON,
+		Loader:      loader,
 		path:        path,
 	}
 
@@ -83,12 +77,12 @@ func NewJSONFileWatcher(path string, options ...Option) *FileWatcher {
 }
 
 // NewYAMLFileWatcher creates a new File-Watcher that observes yaml files.
-// The prefix is optional and can be left empty.
-// This is useful in case you have multiple File-Watchers observing multiple files, which contain the same keys.
-// When specified the prefix will be added to the key in the ConfigMap.
-func NewYAMLFileWatcher(path string, options ...Option) *FileWatcher {
+// Setting the Prefix is useful in case you have multiple Watchers observing multiple files,
+// which contain the same keys. The prefix will be added to the key in the global ConfigMap.
+func NewYAMLFileWatcher(path string, loader Loader, options ...Option) *FileWatcher {
 	fw := &FileWatcher{
 		watcherType: watcherTypeYAML,
+		Loader:      loader,
 		path:        path,
 	}
 
@@ -141,13 +135,6 @@ func (f *FileWatcher) Close() error {
 // ErrChan returns the file-watcher's error channel.
 func (f *FileWatcher) ErrChan() ErrChan {
 	return f.errChan
-}
-
-// SetLoader sets the underlying loader for the file-watcher.
-func (f *FileWatcher) SetLoader(loader Loader) {
-	if loader != nil {
-		f.Loader = loader
-	}
 }
 
 func callback(config ConfigMap, toMap func() map[string]string, triggerChannels []TriggerChannel) callbackFunc {

@@ -50,31 +50,25 @@ func Test_YAMLFileWatcher(t *testing.T) {
 		}
 	}()
 
+	enviLoader := envi.NewEnvi()
+
 	// declare a new file watcher with prefix / without setting loader while declaring
-	watcher := filewatch.NewYAMLFileWatcher(yamlFilePath, filewatch.WithPrefix(prefix), filewatch.WithTriggerChannels(triggerChan))
+	watcher := filewatch.NewYAMLFileWatcher(yamlFilePath, enviLoader, filewatch.WithPrefix(prefix), filewatch.WithTriggerChannels(triggerChan))
 	t.Cleanup(func() {
 		if err := watcher.Close(); err != nil {
 			t.Error(err)
 		}
 	})
 
-	var config map[string]string
-
-	t.Run("loader not set", func(t *testing.T) {
-		err := watcher.Start(config)
-		if err == nil && errors.Is(err, filewatch.ErrLoaderNotSet) == false {
-			t.Error("expected error")
-		}
-	})
-
 	var err error
+	var config map[string]string
 
 	// setup error check
 	errWG := &sync.WaitGroup{}
 	errWG.Add(1)
 
 	// load config files
-	if config, err = loadConfig(t, config, errWG, watcher); err != nil {
+	if config, err = loadConfig(t, config, enviLoader, errWG, watcher); err != nil {
 		t.Fatal(err)
 	}
 
@@ -132,10 +126,8 @@ func Test_YAMLFileWatcher(t *testing.T) {
 			}
 		}()
 
-		envi := envi.NewEnvi()
-
 		// declare a new file watcher without prefix / with setting loader while declaring
-		watcher := filewatch.NewYAMLFileWatcher(yamlFilePath, filewatch.WithLoader(envi), filewatch.WithTriggerChannels(triggerChan))
+		watcher := filewatch.NewYAMLFileWatcher(yamlFilePath, enviLoader, filewatch.WithTriggerChannels(triggerChan))
 		t.Cleanup(func() {
 			if err := watcher.Close(); err != nil {
 				t.Error(err)
@@ -146,7 +138,7 @@ func Test_YAMLFileWatcher(t *testing.T) {
 			t.Error(err)
 		}
 
-		config = envi.ToMap() // load vars into config map
+		config = enviLoader.ToMap() // load vars into config map
 
 		// overwrite config files
 		if err := os.WriteFile(yamlFilePath, []byte(overwriteData), 0644); err != nil {
@@ -161,6 +153,15 @@ func Test_YAMLFileWatcher(t *testing.T) {
 		}
 
 		wg.Wait() // wait for triggers to get called
+	})
+
+	t.Run("loader not set", func(t *testing.T) {
+		watcher := filewatch.NewYAMLFileWatcher("", nil)
+
+		err := watcher.Start(config)
+		if err == nil && errors.Is(err, filewatch.ErrLoaderNotSet) == false {
+			t.Error("expected error")
+		}
 	})
 }
 
@@ -190,31 +191,25 @@ func Test_JSONFileWatcher(t *testing.T) {
 		}
 	}()
 
+	enviLoader := envi.NewEnvi()
+
 	// declare a new file watcher with prefix / without setting loader while declaring
-	watcher := filewatch.NewJSONFileWatcher(jsonFilePath, filewatch.WithPrefix(prefix), filewatch.WithTriggerChannels(triggerChan))
+	watcher := filewatch.NewJSONFileWatcher(jsonFilePath, enviLoader, filewatch.WithPrefix(prefix), filewatch.WithTriggerChannels(triggerChan))
 	t.Cleanup(func() {
 		if err := watcher.Close(); err != nil {
 			t.Error(err)
 		}
 	})
 
-	var config map[string]string
-
-	t.Run("loader not set", func(t *testing.T) {
-		err := watcher.Start(config)
-		if err == nil && errors.Is(err, filewatch.ErrLoaderNotSet) == false {
-			t.Error("expected error")
-		}
-	})
-
 	var err error
+	var config map[string]string
 
 	// setup error check
 	errWG := &sync.WaitGroup{}
 	errWG.Add(1)
 
 	// load config files
-	if config, err = loadConfig(t, config, errWG, watcher); err != nil {
+	if config, err = loadConfig(t, config, enviLoader, errWG, watcher); err != nil {
 		t.Fatal(err)
 	}
 
@@ -270,10 +265,8 @@ func Test_JSONFileWatcher(t *testing.T) {
 			}
 		}()
 
-		envi := envi.NewEnvi()
-
 		// declare a new file watcher without prefix / with setting loader while declaring
-		watcher := filewatch.NewJSONFileWatcher(jsonFilePath, filewatch.WithLoader(envi), filewatch.WithTriggerChannels(triggerChan))
+		watcher := filewatch.NewJSONFileWatcher(jsonFilePath, enviLoader, filewatch.WithTriggerChannels(triggerChan))
 		t.Cleanup(func() {
 			if err := watcher.Close(); err != nil {
 				t.Error(err)
@@ -284,7 +277,7 @@ func Test_JSONFileWatcher(t *testing.T) {
 			t.Error(err)
 		}
 
-		config = envi.ToMap() // load vars into config map
+		config = enviLoader.ToMap() // load vars into config map
 
 		// overwrite config files
 		if err := os.WriteFile(jsonFilePath, []byte(overwriteData), 0644); err != nil {
@@ -300,16 +293,23 @@ func Test_JSONFileWatcher(t *testing.T) {
 
 		wg.Wait() // wait for triggers to get called
 	})
+
+	t.Run("loader not set", func(t *testing.T) {
+		watcher := filewatch.NewJSONFileWatcher("", nil)
+
+		err := watcher.Start(config)
+		if err == nil && errors.Is(err, filewatch.ErrLoaderNotSet) == false {
+			t.Error("expected error")
+		}
+	})
 }
 
-func loadConfig(t *testing.T, config map[string]string, errWG *sync.WaitGroup, watchers ...*filewatch.FileWatcher) (map[string]string, error) {
+func loadConfig(t *testing.T, config map[string]string, enviLoader *envi.Envi, errWG *sync.WaitGroup, watchers ...*filewatch.FileWatcher) (map[string]string, error) {
 	t.Helper()
-
-	enviLoader := envi.NewEnvi()
 
 	if len(watchers) > 0 {
 		for i := range watchers {
-			if err := setupWatcher(t, config, watchers[i], enviLoader, errWG); err != nil {
+			if err := setupWatcher(t, config, watchers[i], errWG); err != nil {
 				return nil, err
 			}
 		}
@@ -325,10 +325,8 @@ func loadConfig(t *testing.T, config map[string]string, errWG *sync.WaitGroup, w
 	return enviLoader.ToMap(), nil
 }
 
-func setupWatcher(t *testing.T, config map[string]string, w *filewatch.FileWatcher, loader filewatch.Loader, wg *sync.WaitGroup) error {
+func setupWatcher(t *testing.T, config map[string]string, w *filewatch.FileWatcher, wg *sync.WaitGroup) error {
 	t.Helper()
-
-	w.SetLoader(loader)
 
 	if err := w.Start(config); err != nil {
 		return err
