@@ -53,14 +53,17 @@ func Test_YAMLFileWatcher(t *testing.T) {
 	enviLoader := envi.NewEnvi()
 
 	// declare a new file watcher with prefix / without setting loader while declaring
-	watcher := filewatch.NewYAMLFileWatcher(yamlFilePath, enviLoader, filewatch.WithPrefix(prefix), filewatch.WithTriggerChannels(triggerChan))
+	watcher, err := filewatch.NewYAMLFileWatcher(yamlFilePath, enviLoader, filewatch.WithPrefix(prefix), filewatch.WithTriggerChannels(triggerChan))
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	t.Cleanup(func() {
 		if err := watcher.Close(); err != nil {
 			t.Error(err)
 		}
 	})
 
-	var err error
 	var config map[string]string
 
 	// setup error check
@@ -127,7 +130,7 @@ func Test_YAMLFileWatcher(t *testing.T) {
 		}()
 
 		// declare a new file watcher without prefix / with setting loader while declaring
-		watcher := filewatch.NewYAMLFileWatcher(yamlFilePath, enviLoader, filewatch.WithTriggerChannels(triggerChan))
+		watcher, _ := filewatch.NewYAMLFileWatcher(yamlFilePath, enviLoader, filewatch.WithTriggerChannels(triggerChan))
 		t.Cleanup(func() {
 			if err := watcher.Close(); err != nil {
 				t.Error(err)
@@ -155,11 +158,30 @@ func Test_YAMLFileWatcher(t *testing.T) {
 		wg.Wait() // wait for triggers to get called
 	})
 
-	t.Run("loader not set", func(t *testing.T) {
-		watcher := filewatch.NewYAMLFileWatcher("", nil)
+	t.Run("empty path", func(t *testing.T) {
+		_, err := filewatch.NewYAMLFileWatcher("", nil)
+		if err == nil || !errors.Is(err, filewatch.ErrNoPath) {
+			t.Error("expected error")
+		}
+	})
 
-		err := watcher.Start(config)
-		if err == nil && errors.Is(err, filewatch.ErrLoaderNotSet) == false {
+	t.Run("loader not set", func(t *testing.T) {
+		_, err := filewatch.NewYAMLFileWatcher("test-path", nil)
+		if err == nil || !errors.Is(err, filewatch.ErrLoaderNotSet) {
+			t.Error("expected error")
+		}
+	})
+
+	t.Run("empty prefix", func(t *testing.T) {
+		_, err := filewatch.NewYAMLFileWatcher("test-path", enviLoader, filewatch.WithPrefix(""))
+		if err == nil || !errors.Is(err, filewatch.ErrEmptyPrefix) {
+			t.Error("expected error")
+		}
+	})
+
+	t.Run("empty prefix", func(t *testing.T) {
+		_, err := filewatch.NewYAMLFileWatcher("test-path", enviLoader, filewatch.WithTriggerChannels())
+		if err == nil || !errors.Is(err, filewatch.ErrNoTriggers) {
 			t.Error("expected error")
 		}
 	})
@@ -194,14 +216,17 @@ func Test_JSONFileWatcher(t *testing.T) {
 	enviLoader := envi.NewEnvi()
 
 	// declare a new file watcher with prefix / without setting loader while declaring
-	watcher := filewatch.NewJSONFileWatcher(jsonFilePath, enviLoader, filewatch.WithPrefix(prefix), filewatch.WithTriggerChannels(triggerChan))
+	watcher, err := filewatch.NewJSONFileWatcher(jsonFilePath, enviLoader, filewatch.WithPrefix(prefix), filewatch.WithTriggerChannels(triggerChan))
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	t.Cleanup(func() {
 		if err := watcher.Close(); err != nil {
 			t.Error(err)
 		}
 	})
 
-	var err error
 	var config map[string]string
 
 	// setup error check
@@ -266,7 +291,7 @@ func Test_JSONFileWatcher(t *testing.T) {
 		}()
 
 		// declare a new file watcher without prefix / with setting loader while declaring
-		watcher := filewatch.NewJSONFileWatcher(jsonFilePath, enviLoader, filewatch.WithTriggerChannels(triggerChan))
+		watcher, _ := filewatch.NewJSONFileWatcher(jsonFilePath, enviLoader, filewatch.WithTriggerChannels(triggerChan))
 		t.Cleanup(func() {
 			if err := watcher.Close(); err != nil {
 				t.Error(err)
@@ -294,11 +319,30 @@ func Test_JSONFileWatcher(t *testing.T) {
 		wg.Wait() // wait for triggers to get called
 	})
 
-	t.Run("loader not set", func(t *testing.T) {
-		watcher := filewatch.NewJSONFileWatcher("", nil)
+	t.Run("empty path", func(t *testing.T) {
+		_, err := filewatch.NewJSONFileWatcher("", nil)
+		if err == nil || !errors.Is(err, filewatch.ErrNoPath) {
+			t.Error("expected error")
+		}
+	})
 
-		err := watcher.Start(config)
-		if err == nil && errors.Is(err, filewatch.ErrLoaderNotSet) == false {
+	t.Run("loader not set", func(t *testing.T) {
+		_, err := filewatch.NewJSONFileWatcher("test-path", nil)
+		if err == nil || !errors.Is(err, filewatch.ErrLoaderNotSet) {
+			t.Error("expected error")
+		}
+	})
+
+	t.Run("empty prefix", func(t *testing.T) {
+		_, err := filewatch.NewJSONFileWatcher("test-path", enviLoader, filewatch.WithPrefix(""))
+		if err == nil || !errors.Is(err, filewatch.ErrEmptyPrefix) {
+			t.Error("expected error")
+		}
+	})
+
+	t.Run("empty prefix", func(t *testing.T) {
+		_, err := filewatch.NewJSONFileWatcher("test-path", enviLoader, filewatch.WithTriggerChannels())
+		if err == nil || !errors.Is(err, filewatch.ErrNoTriggers) {
 			t.Error("expected error")
 		}
 	})

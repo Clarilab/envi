@@ -1,7 +1,6 @@
 package filewatch
 
 import (
-	"errors"
 	"fmt"
 )
 
@@ -42,19 +41,31 @@ type FileWatcher struct {
 }
 
 // Option is a function that can be used to configure the FileWatcher.
-type Option func(*FileWatcher)
+type Option func(*FileWatcher) error
 
 // WithPrefix is a function that can be used to set the prefix for the file paths.
 func WithPrefix(prefix string) Option {
-	return func(f *FileWatcher) {
+	return func(f *FileWatcher) error {
+		if prefix == "" {
+			return ErrEmptyPrefix
+		}
+
 		f.prefix = prefix
+
+		return nil
 	}
 }
 
 // WithTriggerChannels is a function that can be used to set the TriggerChannels for the FileWatcher.
 func WithTriggerChannels(triggerChannels ...TriggerChannel) Option {
-	return func(f *FileWatcher) {
+	return func(f *FileWatcher) error {
+		if len(triggerChannels) == 0 {
+			return ErrNoTriggers
+		}
+
 		f.triggerChannels = triggerChannels
+
+		return nil
 	}
 }
 
@@ -62,39 +73,42 @@ func WithTriggerChannels(triggerChannels ...TriggerChannel) Option {
 // The prefix is optional and can be left empty.
 // Setting the Prefix is useful in case you have multiple Watchers observing multiple files,
 // which contain the same keys. The prefix will be added to the key in the global ConfigMap.
-func NewJSONFileWatcher(path string, loader Loader, options ...Option) *FileWatcher {
-	fw := &FileWatcher{
-		watcherType: watcherTypeJSON,
-		Loader:      loader,
-		path:        path,
-	}
-
-	for i := range options {
-		options[i](fw)
-	}
-
-	return fw
+func NewJSONFileWatcher(path string, loader Loader, options ...Option) (*FileWatcher, error) {
+	return newWatcher(path, watcherTypeJSON, loader, options...)
 }
 
 // NewYAMLFileWatcher creates a new File-Watcher that observes yaml files.
 // Setting the Prefix is useful in case you have multiple Watchers observing multiple files,
 // which contain the same keys. The prefix will be added to the key in the global ConfigMap.
-func NewYAMLFileWatcher(path string, loader Loader, options ...Option) *FileWatcher {
+func NewYAMLFileWatcher(path string, loader Loader, options ...Option) (*FileWatcher, error) {
+	return newWatcher(path, watcherTypeYAML, loader, options...)
+}
+
+func newWatcher(path string, typ watcherType, loader Loader, options ...Option) (*FileWatcher, error) {
+	const errMessage = "failed to create a new YAML-File-Watcher: %w"
+
+	if path == "" {
+		return nil, fmt.Errorf(errMessage, ErrNoPath)
+	}
+
+	if loader == nil {
+		return nil, fmt.Errorf(errMessage, ErrLoaderNotSet)
+	}
+
 	fw := &FileWatcher{
-		watcherType: watcherTypeYAML,
+		watcherType: typ,
 		Loader:      loader,
 		path:        path,
 	}
 
 	for i := range options {
-		options[i](fw)
+		if err := options[i](fw); err != nil {
+			return nil, fmt.Errorf(errMessage, err)
+		}
 	}
 
-	return fw
+	return fw, nil
 }
-
-// ErrLoaderNotSet is returned when no loader is specified.
-var ErrLoaderNotSet = errors.New("no loader is specified")
 
 // Start starts the file-watcher. The config parameter is the ConfigMap
 // that will be updated when the file-watcher detects changes.
@@ -102,10 +116,6 @@ func (f *FileWatcher) Start(config ConfigMap) error {
 	const errMessage = "failed to start watcher: %w"
 
 	var err error
-
-	if f.Loader == nil {
-		return fmt.Errorf(errMessage, ErrLoaderNotSet)
-	}
 
 	switch {
 	case f.watcherType == watcherTypeYAML && f.prefix != "":
