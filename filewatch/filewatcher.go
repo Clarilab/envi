@@ -1,6 +1,7 @@
 package filewatch
 
 import (
+	"errors"
 	"fmt"
 )
 
@@ -8,7 +9,7 @@ type (
 	// ConfigMap is a map of configuration variables.
 	ConfigMap map[string]string
 
-	// TriggerChannel is a channel that is used to
+	// TriggerChannel is a channel
 	TriggerChannel chan<- struct{}
 
 	// ErrChan is a channel that is used to receive errors.
@@ -40,36 +41,96 @@ type FileWatcher struct {
 	triggerChannels []TriggerChannel
 }
 
+// Option is a function that can be used to configure the FileWatcher.
+type Option func(*FileWatcher)
+
+// WithPrefix is a function that can be used to set the prefix for the file paths.
+func WithPrefix(prefix string) Option {
+	return func(f *FileWatcher) {
+		f.prefix = prefix
+	}
+}
+
+// WithLoader is a function that can be used to set the Loader for the FileWatcher.
+func WithLoader(loader Loader) Option {
+	return func(f *FileWatcher) {
+		f.Loader = loader
+	}
+}
+
+// WithTriggerChannels is a function that can be used to set the TriggerChannels for the FileWatcher.
+func WithTriggerChannels(triggerChannels ...TriggerChannel) Option {
+	return func(f *FileWatcher) {
+		f.triggerChannels = triggerChannels
+	}
+}
+
 // NewJSONFileWatcher creates a new File-Watcher that observes json files.
 // The prefix is optional and can be left empty.
 // This is useful in case you have multiple Watchers observing multiple files, which contain the same keys.
 // The prefix will be added to the key in the global ConfigMap.
-func NewJSONFileWatcher(path, prefix string, triggerChannels ...TriggerChannel) *FileWatcher {
-	return &FileWatcher{
-		watcherType:     watcherTypeJSON,
-		prefix:          prefix,
-		path:            path,
-		triggerChannels: triggerChannels,
+func NewJSONFileWatcher(path string, options ...Option) *FileWatcher {
+	fw := &FileWatcher{
+		watcherType: watcherTypeJSON,
+		path:        path,
 	}
+
+	for i := range options {
+		options[i](fw)
+	}
+
+	return fw
 }
 
 // NewYAMLFileWatcher creates a new File-Watcher that observes yaml files.
 // The prefix is optional and can be left empty.
 // This is useful in case you have multiple File-Watchers observing multiple files, which contain the same keys.
 // When specified the prefix will be added to the key in the ConfigMap.
-func NewYAMLFileWatcher(path, prefix string, triggerChannels ...TriggerChannel) *FileWatcher {
-	return &FileWatcher{
-		watcherType:     watcherTypeYAML,
-		prefix:          prefix,
-		path:            path,
-		triggerChannels: triggerChannels,
+func NewYAMLFileWatcher(path string, options ...Option) *FileWatcher {
+	fw := &FileWatcher{
+		watcherType: watcherTypeYAML,
+		path:        path,
 	}
+
+	for i := range options {
+		options[i](fw)
+	}
+
+	return fw
 }
+
+// ErrLoaderNotSet is returned when no loader is specified.
+var ErrLoaderNotSet = errors.New("no loader is specified")
 
 // Start starts the file-watcher. The config parameter is the ConfigMap
 // that will be updated when the file-watcher detects changes.
 func (f *FileWatcher) Start(config ConfigMap) error {
-	return f.startWatcher(config)
+	const errMessage = "failed to start watcher: %w"
+
+	var err error
+
+	if f.Loader == nil {
+		return fmt.Errorf(errMessage, ErrLoaderNotSet)
+	}
+
+	switch {
+	case f.watcherType == watcherTypeYAML && f.prefix != "":
+		err, f.closeFunc, f.errChan = f.LoadAndWatchYAMLFilePrefixed(f.prefix, f.path, callback(config, f.ToMap, f.triggerChannels))
+
+	case f.watcherType == watcherTypeJSON && f.prefix != "":
+		err, f.closeFunc, f.errChan = f.LoadAndWatchJSONFilePrefixed(f.prefix, f.path, callback(config, f.ToMap, f.triggerChannels))
+
+	case f.watcherType == watcherTypeYAML:
+		err, f.closeFunc, f.errChan = f.LoadAndWatchYAMLFile(f.path, callback(config, f.ToMap, f.triggerChannels))
+
+	case f.watcherType == watcherTypeJSON:
+		err, f.closeFunc, f.errChan = f.LoadAndWatchJSONFile(f.path, callback(config, f.ToMap, f.triggerChannels))
+	}
+	if err != nil {
+		return fmt.Errorf(errMessage, err)
+	}
+
+	return nil
 }
 
 // Close closes the file-watcher.
@@ -87,36 +148,6 @@ func (f *FileWatcher) SetLoader(loader Loader) {
 	if loader != nil {
 		f.Loader = loader
 	}
-}
-
-func (f *FileWatcher) startWatcher(config ConfigMap) error {
-	const errMessage = "failed to start watcher: %w"
-
-	var err error
-	var close closeFunc
-	var errChan <-chan error
-
-	switch {
-	case f.watcherType == watcherTypeYAML && f.prefix != "":
-		err, close, errChan = f.LoadAndWatchYAMLFilePrefixed(f.prefix, f.path, callback(config, f.ToMap, f.triggerChannels))
-
-	case f.watcherType == watcherTypeJSON && f.prefix != "":
-		err, close, errChan = f.LoadAndWatchJSONFilePrefixed(f.prefix, f.path, callback(config, f.ToMap, f.triggerChannels))
-
-	case f.watcherType == watcherTypeYAML:
-		err, close, errChan = f.LoadAndWatchYAMLFile(f.path, callback(config, f.ToMap, f.triggerChannels))
-
-	case f.watcherType == watcherTypeJSON:
-		err, close, errChan = f.LoadAndWatchJSONFile(f.path, callback(config, f.ToMap, f.triggerChannels))
-	}
-	if err != nil {
-		return fmt.Errorf(errMessage, err)
-	}
-
-	f.closeFunc = close
-	f.errChan = errChan
-
-	return nil
 }
 
 func callback(config ConfigMap, toMap func() map[string]string, triggerChannels []TriggerChannel) callbackFunc {
