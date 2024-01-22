@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Clarilab/envi/filewatch/v2"
 	"github.com/Clarilab/envi/v2"
+	"github.com/Clarilab/envi/v2/filewatch"
 )
 
 const (
