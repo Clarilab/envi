@@ -5,10 +5,7 @@ import (
 )
 
 type (
-	// ConfigMap is a map of configuration variables.
-	ConfigMap map[string]string
-
-	// TriggerChannel is a channel
+	// TriggerChannel is a channel to send a signal when a file is changed.
 	TriggerChannel chan<- struct{}
 
 	// ErrChan is a channel that is used to receive errors.
@@ -69,15 +66,14 @@ func WithTriggerChannels(triggerChannels ...TriggerChannel) Option {
 	}
 }
 
-// NewJSONFileWatcher creates a new File-Watcher that observes json files.
-// The prefix is optional and can be left empty.
+// NewJSONFileWatcher creates a new FileWatcher that observes json files.
 // Setting the Prefix is useful in case you have multiple Watchers observing multiple files,
 // which contain the same keys. The prefix will be added to the key in the global ConfigMap.
 func NewJSONFileWatcher(path string, loader Loader, options ...Option) (*FileWatcher, error) {
 	return newWatcher(path, watcherTypeJSON, loader, options...)
 }
 
-// NewYAMLFileWatcher creates a new File-Watcher that observes yaml files.
+// NewYAMLFileWatcher creates a new FileWatcher that observes yaml files.
 // Setting the Prefix is useful in case you have multiple Watchers observing multiple files,
 // which contain the same keys. The prefix will be added to the key in the global ConfigMap.
 func NewYAMLFileWatcher(path string, loader Loader, options ...Option) (*FileWatcher, error) {
@@ -85,7 +81,7 @@ func NewYAMLFileWatcher(path string, loader Loader, options ...Option) (*FileWat
 }
 
 func newWatcher(path string, typ watcherType, loader Loader, options ...Option) (*FileWatcher, error) {
-	const errMessage = "failed to create a new YAML-File-Watcher: %w"
+	const errMessage = "failed to create a new YAML-FileWatcher: %w"
 
 	if path == "" {
 		return nil, fmt.Errorf(errMessage, ErrNoPath)
@@ -110,25 +106,24 @@ func newWatcher(path string, typ watcherType, loader Loader, options ...Option) 
 	return fw, nil
 }
 
-// Start starts the file-watcher. The config parameter is the ConfigMap
-// that will be updated when the file-watcher detects changes.
-func (f *FileWatcher) Start(config ConfigMap) error {
+// Start starts the FileWatcher.
+func (f *FileWatcher) Start() error {
 	const errMessage = "failed to start watcher: %w"
 
 	var err error
 
 	switch {
 	case f.watcherType == watcherTypeYAML && f.prefix != "":
-		err, f.closeFunc, f.errChan = f.LoadAndWatchYAMLFilePrefixed(f.prefix, f.path, callback(config, f.ToMap, f.triggerChannels))
+		err, f.closeFunc, f.errChan = f.LoadAndWatchYAMLFilePrefixed(f.prefix, f.path, callback(f.triggerChannels))
 
 	case f.watcherType == watcherTypeJSON && f.prefix != "":
-		err, f.closeFunc, f.errChan = f.LoadAndWatchJSONFilePrefixed(f.prefix, f.path, callback(config, f.ToMap, f.triggerChannels))
+		err, f.closeFunc, f.errChan = f.LoadAndWatchJSONFilePrefixed(f.prefix, f.path, callback(f.triggerChannels))
 
 	case f.watcherType == watcherTypeYAML:
-		err, f.closeFunc, f.errChan = f.LoadAndWatchYAMLFile(f.path, callback(config, f.ToMap, f.triggerChannels))
+		err, f.closeFunc, f.errChan = f.LoadAndWatchYAMLFile(f.path, callback(f.triggerChannels))
 
 	case f.watcherType == watcherTypeJSON:
-		err, f.closeFunc, f.errChan = f.LoadAndWatchJSONFile(f.path, callback(config, f.ToMap, f.triggerChannels))
+		err, f.closeFunc, f.errChan = f.LoadAndWatchJSONFile(f.path, callback(f.triggerChannels))
 	}
 	if err != nil {
 		return fmt.Errorf(errMessage, err)
@@ -137,20 +132,18 @@ func (f *FileWatcher) Start(config ConfigMap) error {
 	return nil
 }
 
-// Close closes the file-watcher.
+// Close closes the FileWatcher.
 func (f *FileWatcher) Close() error {
 	return f.closeFunc()
 }
 
-// ErrChan returns the file-watcher's error channel.
+// ErrChan returns the FileWatcher's error channel.
 func (f *FileWatcher) ErrChan() ErrChan {
 	return f.errChan
 }
 
-func callback(config ConfigMap, toMap func() map[string]string, triggerChannels []TriggerChannel) callbackFunc {
+func callback(triggerChannels []TriggerChannel) callbackFunc {
 	return func() error {
-		config = toMap()
-
 		if len(triggerChannels) > 0 {
 			for i := range triggerChannels {
 				triggerChannels[i] <- struct{}{}

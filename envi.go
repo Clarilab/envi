@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sync"
 
 	"github.com/fsnotify/fsnotify"
@@ -443,7 +444,7 @@ func (envi *Envi) loadAndWatchFile(
 
 	go envi.fileWatcher(watcher, path, loadFunc, watchErrChan, callbacks...)
 
-	err = watcher.Add(path)
+	err = watcher.Add(filepath.Dir(path))
 	if err != nil {
 		watcher.Close()
 		return fmt.Errorf(errMessage, err), nil, nil
@@ -466,7 +467,11 @@ func (envi *Envi) fileWatcher(
 				return
 			}
 
-			if event.Has(fsnotify.Write) {
+			if filepath.Base(event.Name) != filepath.Base(filePath) {
+				continue
+			}
+
+			if event.Has(fsnotify.Chmod) || event.Has(fsnotify.Write) {
 				err := loadFunc()
 				if err != nil {
 					watchErrChan <- fmt.Errorf("error reloading watched file: %w", err)
@@ -479,12 +484,8 @@ func (envi *Envi) fileWatcher(
 						watchErrChan <- fmt.Errorf("error executing callback for watched file: %w", err)
 					}
 				}
-			} else if event.Has(fsnotify.Remove) {
-				err := watcher.Add(filePath)
-				if err != nil {
-					watchErrChan <- fmt.Errorf("error reenabling watcher for file: %w", err)
-				}
 			}
+
 		case err, ok := <-watcher.Errors:
 			if !ok {
 				return

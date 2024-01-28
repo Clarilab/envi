@@ -52,7 +52,7 @@ func Test_YAMLFileWatcher(t *testing.T) {
 
 	enviLoader := envi.NewEnvi()
 
-	// declare a new file watcher with prefix / without setting loader while declaring
+	// declare a new file watcher.
 	watcher, err := filewatch.NewYAMLFileWatcher(yamlFilePath, enviLoader, filewatch.WithPrefix(prefix), filewatch.WithTriggerChannels(triggerChan))
 	if err != nil {
 		t.Fatal(err)
@@ -137,7 +137,7 @@ func Test_YAMLFileWatcher(t *testing.T) {
 			}
 		})
 
-		if err := watcher.Start(config); err != nil {
+		if err := watcher.Start(); err != nil {
 			t.Error(err)
 		}
 
@@ -298,7 +298,7 @@ func Test_JSONFileWatcher(t *testing.T) {
 			}
 		})
 
-		if err := watcher.Start(config); err != nil {
+		if err := watcher.Start(); err != nil {
 			t.Error(err)
 		}
 
@@ -353,7 +353,7 @@ func loadConfig(t *testing.T, config map[string]string, enviLoader *envi.Envi, e
 
 	if len(watchers) > 0 {
 		for i := range watchers {
-			if err := setupWatcher(t, config, watchers[i], errWG); err != nil {
+			if err := setupWatcher(t, watchers[i], errWG); err != nil {
 				return nil, err
 			}
 		}
@@ -369,10 +369,10 @@ func loadConfig(t *testing.T, config map[string]string, enviLoader *envi.Envi, e
 	return enviLoader.ToMap(), nil
 }
 
-func setupWatcher(t *testing.T, config map[string]string, w *filewatch.FileWatcher, wg *sync.WaitGroup) error {
+func setupWatcher(t *testing.T, w *filewatch.FileWatcher, wg *sync.WaitGroup) error {
 	t.Helper()
 
-	if err := w.Start(config); err != nil {
+	if err := w.Start(); err != nil {
 		return err
 	}
 
