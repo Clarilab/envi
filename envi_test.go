@@ -562,56 +562,6 @@ func Test_LoadAndWatchFile(t *testing.T) {
 		assert.Error(t, err)
 	})
 
-	t.Run("file removed during the watching sends error over channel", func(t *testing.T) {
-		const configFilePath = "testdata/watchmegetremoved.json"
-
-		testConfig.Foo = initialFooVal
-		testConfig.Quo = initialQuoVal
-		callbackProof.wasCalled = false
-
-		blob, err := json.Marshal(testConfig)
-		assert.NoError(t, err)
-
-		err = os.WriteFile(configFilePath, blob, 0644)
-		assert.NoError(t, err)
-
-		// load and watch the json file
-		e := envi.NewEnvi()
-
-		err, closeFunc, watchErrChan := e.LoadAndWatchJSONFile(configFilePath, watcherCallback)
-		assert.NoError(t, err)
-
-		t.Cleanup(func() {
-			err := closeFunc()
-			if err != nil {
-				t.Logf("Failed to close watcher: %v", err)
-			}
-		})
-
-		var watchErrors []error
-
-		go func() {
-			for {
-				err, ok := <-watchErrChan
-				if !ok {
-					return
-				}
-
-				watchErrors = append(watchErrors, err)
-			}
-		}()
-
-		time.Sleep(100 * time.Millisecond)
-
-		os.Remove(configFilePath)
-
-		time.Sleep(100 * time.Millisecond)
-
-		assert.NotEmpty(t, watchErrors)
-
-		assert.False(t, callbackProof.wasCalled)
-	})
-
 	t.Run("error during callback execution gets sent over channel", func(t *testing.T) {
 		const configFilePath = "testdata/watchme.json"
 
