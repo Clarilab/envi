@@ -471,7 +471,7 @@ func (envi *Envi) fileWatcher(
 				continue
 			}
 
-			if event.Has(fsnotify.Chmod) || event.Has(fsnotify.Write) {
+			if event.Has(fsnotify.Create) || event.Has(fsnotify.Write) {
 				err := loadFunc()
 				if err != nil {
 					watchErrChan <- fmt.Errorf("error reloading watched file: %w", err)
