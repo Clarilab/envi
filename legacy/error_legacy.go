@@ -1,4 +1,4 @@
-package envi
+package envi_legacy
 
 import (
 	"fmt"
