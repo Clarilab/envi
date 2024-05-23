@@ -7,31 +7,46 @@ import (
 	"testing"
 
 	"github.com/Clarilab/envi/v2"
-	"github.com/davecgh/go-spew/spew"
 )
 
 type MightyConfig struct {
 	WaitGroup *sync.WaitGroup
-	Name      string   `yaml:"PETER"`
+	Name      string   `yaml:"PETER" required:"true"`
 	Tenants   []string `yaml:"TENANTS"`
+	Foo       string   `yaml:"FOO" default:"bar"`
+	Int32     int32    `default:"123"`
+	Int64     int64    `default:"123456"`
 }
 
-type Env struct {
-	MightyConfig MightyConfig `env:"ENVI_TEST" watch:"true"`
+type Config struct {
+	MightyConfig MightyConfig `env:"ENVI_TEST" watch:"true" default:"/Users/maxbreida/dev/github.com/Clarilab/envi/test.yaml"`
+	TextFile     Textfile     `env:"TEXT_FILE" type:"text" default:"/Users/maxbreida/dev/github.com/Clarilab/envi/test.yaml"`
+	ServiceName  string       `env:"SERVICE_NAME" default:"envi-test"`
 }
 
-func (m MightyConfig) Notify() {
+type Textfile struct {
+	Text  string `default:"blabla"`
+	Text2 string `default:"blabla2"`
+}
+
+func (m MightyConfig) OnChange() {
 	m.WaitGroup.Done()
+}
+
+func (m MightyConfig) OnError(err error) {
+	fmt.Println(err)
 }
 
 func Test_Basic(t *testing.T) {
 	t.Setenv("ENVI_TEST", "/Users/maxbreida/dev/github.com/Clarilab/envi/test.yaml")
 
-	env := Env{
+	config := Config{
 		MightyConfig: MightyConfig{
 			WaitGroup: new(sync.WaitGroup),
 		},
 	}
+
+	enviClient := envi.New()
 
 	if err := os.WriteFile(
 		"test.yaml",
@@ -47,14 +62,12 @@ func Test_Basic(t *testing.T) {
 		}
 	})
 
-	err := envi.GetEnvs(&env)
+	err := enviClient.GetConfig(&config)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	spew.Dump(env)
-
-	env.MightyConfig.WaitGroup.Add(2)
+	config.MightyConfig.WaitGroup.Add(1)
 
 	if err := os.WriteFile(
 		"test.yaml",
@@ -64,11 +77,14 @@ func Test_Basic(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	env.MightyConfig.WaitGroup.Wait()
+	config.MightyConfig.WaitGroup.Wait()
 
-	if env.MightyConfig.Name != "PANUS" {
+	if config.MightyConfig.Name != "PANUS" {
 		t.Fatal("expected PANUS")
 	}
 
-	spew.Dump(env)
+	err = enviClient.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
 }
