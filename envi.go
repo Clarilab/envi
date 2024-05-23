@@ -2,9 +2,11 @@ package envi
 
 import (
 	"cmp"
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"reflect"
 	"strconv"
 	"strings"
@@ -14,45 +16,132 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-const tagDefault = "default"
-const tagEnv = "env"
-const tagType = "type"
-const tagRequired = "required"
-const tagWatch = "watch"
+const (
+	tagDefault  = "default"
+	tagEnv      = "env"
+	tagType     = "type"
+	tagRequired = "required"
+	tagWatch    = "watch"
+)
 
+// unmarshalFunc describes how to unmarshal a file.
 type unmarshalFunc func([]byte, any) error
 
+// FileWatcher is an interface for watching file changes.
 type FileWatcher interface {
 	OnChange()
 	OnError(error)
 }
 
-type Envi struct {
-	fileWatchers []*fsnotify.Watcher
+type fileWatcherInstance struct {
+	watcher *fsnotify.Watcher
+	cancel  context.CancelFunc
 }
 
+// Envi holds references to all active file watchers.
+type Envi struct {
+	fileWatchers map[string]fileWatcherInstance
+}
+
+// Close closes all file watchers attached to the Envi instance.
 func (e *Envi) Close() error {
-	for _, watcher := range e.fileWatchers {
-		if err := watcher.Close(); err != nil {
-			return err
+	var errs []error
+
+	for filePath, instance := range e.fileWatchers {
+		instance.cancel()
+
+		if err := instance.watcher.Close(); err != nil {
+			errs = append(errs, fmt.Errorf("failed to close watcher for file %s with error: %w", filePath, err))
 		}
+	}
+
+	if len(errs) > 0 {
+		return &CloseError{Errors: errs}
 	}
 
 	return nil
 }
 
+// New creates a new Envi instance.
 func New() *Envi {
 	return &Envi{
-		fileWatchers: make([]*fsnotify.Watcher, 0),
+		fileWatchers: make(map[string]fileWatcherInstance, 0),
 	}
 }
 
-// here could be a large description
-func (e *Envi) GetConfig(config any) error {
+/*
+LoadConfig loads all config files and environment variables into the input struct.
+Supported types are JSON, YAML and text files, as well as strings.
+
+If you want to watch a file for changes, the "watch" has to be set to true and the underlying struct
+has to implement the envi.FileWatcher interface.
+
+While using the "default" tag, the "env" tag can be omitted. If not omitted, the value from the
+environment variable will be used.
+
+When using the text file type, envi will try to load the file content into the first string field of that struct.
+
+Example config:
+
+	type Config struct {
+		Environment string   `env:"ENVIRONMENT" required:"true"`
+		YAMLConfig  YAMLFile `type:"yaml" watch:"true" default:"./config.yaml"`
+		TextConfig  Textfile `env:"MY_TEXT_CONFIG_FILE" type:"text"`
+	}
+
+	type YAMLFile struct {
+		Key1 string `yaml:"key1" required:"true"`
+		Key2 string `yaml:"key2"`
+	}
+
+	func (y *YAMLFile) OnChange() {
+		fmt.Println("YAML file changed")
+	}
+
+	func (y *YAMLFile) OnError(err error) {
+		fmt.Println("error while reloading YAML file:", err)
+	}
+
+	type Textfile struct {
+		Value string `default:"bar"`
+	}
+
+Available tags are:
+  - default: default value (supports file paths for files and standard data types bool, float32, float64, int32, int64, string)
+  - env: environment variable name
+  - type: describes the file type (json, yaml, text)
+  - required: indicates that the field is required
+  - watch: indicates that the file should be watched for changes
+*/
+func (e *Envi) LoadConfig(config any) error {
 	const errMsg = "error while getting config: %w"
+
+	err := e.loadConfig(config)
+	if err != nil {
+		return fmt.Errorf(errMsg, err)
+	}
+
+	errs := validate(config)
+	if len(errs) > 0 {
+		return fmt.Errorf(errMsg, &ValidationError{Errors: errs})
+	}
+
+	return nil
+}
+
+func (e *Envi) loadConfig(config any) error {
+	const errMsg = "error while loading config: %w"
 
 	v := reflect.ValueOf(config)
 	t := reflect.TypeOf(config)
+
+	if v.Kind() != reflect.Pointer {
+		return fmt.Errorf(errMsg, &InvalidKindError{
+			FieldName: t.Name(),
+			Expected:  "pointer",
+			Got:       v.Kind().String(),
+		})
+	}
 
 	v = resolveValuePointer(v)
 	t = resolveTypePointer(t)
@@ -82,6 +171,13 @@ func (e *Envi) GetConfig(config any) error {
 			watchTag := getStructTag(t.Field(i), tagWatch)
 
 			path := cmp.Or(os.Getenv(envTag), defaultTag)
+
+			var err error
+			path, err = filepath.Abs(path)
+			if err != nil {
+				return fmt.Errorf(errMsg, err)
+			}
+
 			typeVal := cmp.Or(typeTag, "yaml")
 
 			unmarshalMap := map[string]unmarshalFunc{
@@ -96,7 +192,7 @@ func (e *Envi) GetConfig(config any) error {
 				return fmt.Errorf(errMsg, &InvalidTagError{Tag: "type"})
 			}
 
-			err := loadFile(field, path, unmarshalFunc)
+			err = loadFile(field, path, unmarshalFunc)
 			if err != nil {
 				return fmt.Errorf(errMsg, err)
 			}
@@ -124,16 +220,11 @@ func (e *Envi) GetConfig(config any) error {
 		}
 	}
 
-	errs := validate(config)
-	if len(errs) > 0 {
-		return fmt.Errorf(errMsg, &ValidationError{Errors: errs})
-	}
-
 	return nil
 }
 
 func unmarshalText(data []byte, v any) error {
-	const errMsg = "error while unmarshalling text file: %w"
+	const errMsg = "failed to unmarshal text file: %w"
 
 	val := strings.Trim(string(data), "\n")
 
@@ -227,20 +318,27 @@ func handleDefaults(field reflect.Value) error {
 }
 
 func (e *Envi) watchFile(field reflect.Value, path string, unmarshal unmarshalFunc) error {
+	const errMsg = "error while watching file: %w"
+
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
-		return fmt.Errorf("failed to init watcher: %w", err)
+		return fmt.Errorf(errMsg, err)
 	}
 
-	e.fileWatchers = append(e.fileWatchers, watcher)
+	ctx, cancel := context.WithCancel(context.Background())
 
-	go fileWatcher(watcher, field, path, unmarshal)
+	e.fileWatchers[path] = fileWatcherInstance{
+		watcher: watcher,
+		cancel:  cancel,
+	}
+
+	go e.fileWatcher(ctx, watcher, field, path, unmarshal)
 
 	err = watcher.Add(path)
 	if err != nil {
 		watcher.Close()
 
-		return fmt.Errorf("failed to add path to watcher: %w", err)
+		return fmt.Errorf(errMsg, err)
 	}
 
 	return nil
@@ -252,7 +350,7 @@ func validate(e any) []error {
 	v = resolveValuePointer(v)
 	t = resolveTypePointer(t)
 
-    errors := make([]error, 0)
+	errors := make([]error, 0)
 
 	for i := 0; i < v.NumField(); i++ {
 		field := v.Field(i)
@@ -260,14 +358,14 @@ func validate(e any) []error {
 		if field.Kind() == reflect.Struct {
 			errs := validate(field.Interface())
 			if len(errs) > 0 {
-                errors = append(errors, errs...)
+				errors = append(errors, errs...)
 			}
 		}
 
 		required := getStructTag(t.Field(i), tagRequired)
 
 		if required == "true" && field.IsZero() {
-            errors = append(errors, &FieldRequiredError{FieldName: t.Field(i).Name})
+			errors = append(errors, &FieldRequiredError{FieldName: t.Field(i).Name})
 		}
 	}
 
@@ -294,7 +392,8 @@ func getStructTag(f reflect.StructField, tagName string) string {
 	return f.Tag.Get(tagName)
 }
 
-func fileWatcher(
+func (e *Envi) fileWatcher(
+	ctx context.Context,
 	watcher *fsnotify.Watcher,
 	field reflect.Value,
 	filePath string,
@@ -309,6 +408,8 @@ func fileWatcher(
 
 	for {
 		select {
+		case <-ctx.Done():
+			return
 		case event, ok := <-watcher.Events:
 			if !ok {
 				return
@@ -331,6 +432,8 @@ func fileWatcher(
 				err := watcher.Add(filePath)
 				if err != nil {
 					callback.OnError(fmt.Errorf("error reenabling watcher for file: %w", err))
+
+					continue
 				}
 			}
 		case err, ok := <-watcher.Errors:

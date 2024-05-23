@@ -1,6 +1,7 @@
 package envi_test
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"sync"
@@ -8,6 +9,137 @@ import (
 
 	"github.com/Clarilab/envi/v2"
 )
+
+// !!! Attention: The tests in this file are not meant to be run in parallel because of the t.Setenv usage !!!
+
+func Test_DefaultTag(t *testing.T) {
+	type Config struct {
+		Peter       string `default:"PAN"`
+		Environment string `env:"ENVIRONMENT"`
+		ServiceName string `env:"SERVICE_NAME" default:"envi-test"`
+	}
+
+	testCases := map[string]struct {
+		config         Config
+		expectedConfig Config
+		envvars        map[string]string
+		expectedErr    error
+	}{
+		"empty config with no envvars set": {
+			config: Config{},
+			expectedConfig: Config{
+				Peter:       "PAN",
+				ServiceName: "envi-test",
+			},
+			envvars:     nil,
+			expectedErr: nil,
+		},
+		"empty config with envvars set overwrites defaults": {
+			config: Config{},
+			expectedConfig: Config{
+				Peter:       "PAN",
+				Environment: "dev",
+				ServiceName: "my-service",
+			},
+			envvars: map[string]string{
+				"ENVIRONMENT":  "dev",
+				"SERVICE_NAME": "my-service",
+			},
+			expectedErr: nil,
+		},
+		"pre filled config gets overwritten": {
+			config: Config{
+				Peter:       "Panus",
+				Environment: "prod",
+				ServiceName: "your-service",
+			},
+			expectedConfig: Config{
+				Peter:       "PAN",
+				Environment: "dev",
+				ServiceName: "my-service",
+			},
+			envvars: map[string]string{
+				"ENVIRONMENT":  "dev",
+				"SERVICE_NAME": "my-service",
+			},
+			expectedErr: nil,
+		},
+	}
+
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			for k, v := range tc.envvars {
+				t.Setenv(k, v)
+			}
+
+			e := envi.New()
+
+			err := e.LoadConfig(&tc.config)
+			switch {
+			case err != nil && tc.expectedErr == nil:
+				t.Errorf("expected no error but got %v", err)
+			case err == nil && tc.expectedErr != nil:
+				t.Errorf("expected error %v but got nil", tc.expectedErr)
+			case err != nil && tc.expectedErr != nil:
+				if errors.Unwrap(err).Error() != tc.expectedErr.Error() {
+					t.Errorf("expected error %v but got %v", tc.expectedErr, err)
+				}
+			case err == nil && tc.expectedErr == nil:
+				if tc.config != tc.expectedConfig {
+					t.Errorf("expected config %+v but got %+v", tc.expectedConfig, tc.config)
+				}
+			}
+		})
+	}
+}
+
+func Test_RequiredTag(t *testing.T) {
+	type Config struct {
+		Peter       string `default:"PAN" required:"true"`
+		Environment string `env:"ENVIRONMENT" required:"true"`
+		ServiceName string `env:"SERVICE_NAME"`
+	}
+
+	testCases := map[string]struct {
+		config         Config
+		expectedConfig Config
+		envvars        map[string]string
+		expectedErr    error
+	}{
+		"required field missing": {
+			config:         Config{},
+			expectedConfig: Config{},
+			envvars:        nil,
+			expectedErr:    errors.New("field Environment is required\n"),
+		},
+	}
+
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			for k, v := range tc.envvars {
+				t.Setenv(k, v)
+			}
+
+			e := envi.New()
+
+			err := e.LoadConfig(&tc.config)
+			switch {
+			case err != nil && tc.expectedErr == nil:
+				t.Errorf("expected no error but got %v", err)
+			case err == nil && tc.expectedErr != nil:
+				t.Errorf("expected error %v but got nil", tc.expectedErr)
+			case err != nil && tc.expectedErr != nil:
+				if errors.Unwrap(err).Error() != tc.expectedErr.Error() {
+					t.Errorf("expected error %v but got %v", tc.expectedErr, err)
+				}
+			case err == nil && tc.expectedErr == nil:
+				if tc.config != tc.expectedConfig {
+					t.Errorf("expected config %+v but got %+v", tc.expectedConfig, tc.config)
+				}
+			}
+		})
+	}
+}
 
 type MightyConfig struct {
 	WaitGroup *sync.WaitGroup
@@ -19,8 +151,8 @@ type MightyConfig struct {
 }
 
 type Config struct {
-	MightyConfig MightyConfig `env:"ENVI_TEST" watch:"true" default:"/Users/maxbreida/dev/github.com/Clarilab/envi/test.yaml"`
-	TextFile     Textfile     `env:"TEXT_FILE" type:"text" default:"/Users/maxbreida/dev/github.com/Clarilab/envi/test.yaml"`
+	MightyConfig MightyConfig `env:"ENVI_TEST111" watch:"true" default:"./test.yaml"`
+	TextFile     Textfile     `env:"TEXT_FILE" type:"text" default:"./test.yaml"`
 	ServiceName  string       `env:"SERVICE_NAME" default:"envi-test"`
 }
 
@@ -38,7 +170,7 @@ func (m MightyConfig) OnError(err error) {
 }
 
 func Test_Basic(t *testing.T) {
-	t.Setenv("ENVI_TEST", "/Users/maxbreida/dev/github.com/Clarilab/envi/test.yaml")
+	t.Setenv("ENVI_TEST", "./test.yaml")
 
 	config := Config{
 		MightyConfig: MightyConfig{
@@ -62,7 +194,7 @@ func Test_Basic(t *testing.T) {
 		}
 	})
 
-	err := enviClient.GetConfig(&config)
+	err := enviClient.LoadConfig(&config)
 	if err != nil {
 		t.Fatal(err)
 	}
