@@ -49,6 +49,8 @@ func New() *Envi {
 
 // here could be a large description
 func (e *Envi) GetConfig(config any) error {
+	const errMsg = "error while getting config: %w"
+
 	v := reflect.ValueOf(config)
 	t := reflect.TypeOf(config)
 
@@ -56,7 +58,11 @@ func (e *Envi) GetConfig(config any) error {
 	t = resolveTypePointer(t)
 
 	if v.Kind() != reflect.Struct {
-		return fmt.Errorf("%T is not a struct", config)
+		return fmt.Errorf(errMsg, &InvalidKindError{
+			FieldName: t.Name(),
+			Expected:  "struct",
+			Got:       v.Kind().String(),
+		})
 	}
 
 	for i := 0; i < v.NumField(); i++ {
@@ -66,13 +72,8 @@ func (e *Envi) GetConfig(config any) error {
 		defaultTag := getStructTag(t.Field(i), tagDefault)
 		envTag := getStructTag(t.Field(i), tagEnv)
 
-		split := strings.Split(envTag, ",")
-		if len(split) == 0 {
-			return fmt.Errorf("either env or default tag need to be filled for field: %s", t.Field(i).Name)
-		}
-
 		if envTag == "" && defaultTag == "" {
-			return fmt.Errorf("either env or default tag need to be filled for field: %s", t.Field(i).Name)
+			return fmt.Errorf(errMsg, &MissingTagError{Tag: "env or default"})
 		}
 
 		switch field.Kind() {
@@ -92,42 +93,48 @@ func (e *Envi) GetConfig(config any) error {
 
 			unmarshalFunc, ok := unmarshalMap[typeVal]
 			if !ok {
-				return fmt.Errorf("invalid type %s", typeVal)
+				return fmt.Errorf(errMsg, &InvalidTagError{Tag: "type"})
 			}
 
 			err := loadFile(field, path, unmarshalFunc)
 			if err != nil {
-				return fmt.Errorf("error unmarshaling %s file: %w", typeVal, err)
+				return fmt.Errorf(errMsg, err)
 			}
 
 			if watchTag == "true" {
 				err = e.watchFile(field, path, unmarshalFunc)
 				if err != nil {
-					return fmt.Errorf("error watching %s file: %w", typeVal, err)
+					return fmt.Errorf(errMsg, err)
 				}
 			}
 		case reflect.String:
 			tagVal := getStructTag(t.Field(i), tagEnv)
 
-			if tagVal == "" {
-				return fmt.Errorf("tag env not set for field %s", t.Field(i).Name)
+			if tagVal == "" && defaultTag == "" {
+				return fmt.Errorf(errMsg, &MissingTagError{Tag: "env or default"})
 			}
 
 			field.SetString(cmp.Or(os.Getenv(tagVal), defaultTag))
 		default:
-			return fmt.Errorf("invalid field type %s", field.Kind().String())
+			return fmt.Errorf(errMsg, &InvalidKindError{
+				FieldName: field.Type().Name(),
+				Expected:  "string, struct",
+				Got:       field.Kind().String(),
+			})
 		}
 	}
 
-	err := validate(config)
-	if err != nil {
-		return fmt.Errorf("validation failed: %w", err)
+	errs := validate(config)
+	if len(errs) > 0 {
+		return fmt.Errorf(errMsg, &ValidationError{Errors: errs})
 	}
 
 	return nil
 }
 
 func unmarshalText(data []byte, v any) error {
+	const errMsg = "error while unmarshalling text file: %w"
+
 	val := strings.Trim(string(data), "\n")
 
 	rv := reflect.ValueOf(v)
@@ -151,25 +158,29 @@ func unmarshalText(data []byte, v any) error {
 }
 
 func loadFile(field reflect.Value, path string, unmarshal unmarshalFunc) error {
+	const errMsg = "error while loading file: %w"
+
 	err := handleDefaults(field)
 	if err != nil {
-		return fmt.Errorf("error handling defaults: %w", err)
+		return fmt.Errorf(errMsg, err)
 	}
 
 	blob, err := os.ReadFile(path)
 	if err != nil {
-		return fmt.Errorf("error reading file: %w", err)
+		return fmt.Errorf(errMsg, err)
 	}
 
 	err = unmarshal(blob, field.Addr().Interface())
 	if err != nil {
-		return fmt.Errorf("could not unmarshal: %w", err)
+		return fmt.Errorf(errMsg, err)
 	}
 
 	return nil
 }
 
 func handleDefaults(field reflect.Value) error {
+	const errMsg = "error while handling defaults: %w"
+
 	for i := range field.NumField() {
 		defaultTag := getStructTag(field.Type().Field(i), tagDefault)
 
@@ -180,7 +191,7 @@ func handleDefaults(field reflect.Value) error {
 			case reflect.Int64:
 				parsedInt, err := strconv.ParseInt(defaultTag, 10, 64)
 				if err != nil {
-					return fmt.Errorf("could not parse int: %w", err)
+					return fmt.Errorf(errMsg, &ParsingError{Type: "int", Err: err})
 				}
 
 				field.Field(i).SetInt(parsedInt)
@@ -189,7 +200,7 @@ func handleDefaults(field reflect.Value) error {
 			case reflect.Float64:
 				parsedFloat, err := strconv.ParseFloat(defaultTag, 64)
 				if err != nil {
-					return fmt.Errorf("could not parse float: %w", err)
+					return fmt.Errorf(errMsg, &ParsingError{Type: "float", Err: err})
 				}
 
 				field.Field(i).SetFloat(parsedFloat)
@@ -198,12 +209,16 @@ func handleDefaults(field reflect.Value) error {
 			case reflect.Bool:
 				b, err := strconv.ParseBool(defaultTag)
 				if err != nil {
-					return fmt.Errorf("could not parse bool: %w", err)
+					return fmt.Errorf(errMsg, &ParsingError{Type: "bool", Err: err})
 				}
 
 				field.Field(i).SetBool(b)
 			default:
-				return fmt.Errorf("invalid field type %s", field.Kind().String())
+				return fmt.Errorf(errMsg, &InvalidKindError{
+					FieldName: field.Type().Field(i).Name,
+					Expected:  "string, int, float, bool",
+					Got:       field.Field(i).Kind().String(),
+				})
 			}
 		}
 	}
@@ -230,31 +245,33 @@ func (e *Envi) watchFile(field reflect.Value, path string, unmarshal unmarshalFu
 
 	return nil
 }
-func validate(e any) error {
+func validate(e any) []error {
 	v := reflect.ValueOf(e)
 	t := reflect.TypeOf(e)
 
 	v = resolveValuePointer(v)
 	t = resolveTypePointer(t)
 
+    errors := make([]error, 0)
+
 	for i := 0; i < v.NumField(); i++ {
 		field := v.Field(i)
 
 		if field.Kind() == reflect.Struct {
-			err := validate(field.Interface())
-			if err != nil {
-				return err
+			errs := validate(field.Interface())
+			if len(errs) > 0 {
+                errors = append(errors, errs...)
 			}
 		}
 
 		required := getStructTag(t.Field(i), tagRequired)
 
 		if required == "true" && field.IsZero() {
-			return fmt.Errorf("field %s is required", t.Field(i).Name)
+            errors = append(errors, &FieldRequiredError{FieldName: t.Field(i).Name})
 		}
 	}
 
-	return nil
+	return errors
 }
 
 func resolveValuePointer(rv reflect.Value) reflect.Value {
