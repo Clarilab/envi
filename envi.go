@@ -224,8 +224,6 @@ func (e *Envi) loadConfig(config any) error {
 }
 
 func unmarshalText(data []byte, v any) error {
-	const errMsg = "failed to unmarshal text file: %w"
-
 	val := strings.Trim(string(data), "\n")
 
 	rv := reflect.ValueOf(v)
