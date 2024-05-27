@@ -41,7 +41,7 @@ type YAMLFile struct {
 
 // necessary func to enable file watching
 func (y YAMLFile) OnChange() {
-	// do something when the config filed changes
+	// do something when the config file changes
 }
 
 // necessary func to enable file watching
