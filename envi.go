@@ -70,10 +70,10 @@ func New() *Envi {
 }
 
 /*
-LoadConfig loads all config files and environment variables into the input struct.
+Load loads all config files and environment variables into the input struct.
 Supported types are JSON, YAML and text files, as well as strings.
 
-If you want to watch a file for changes, the "watch" has to be set to true and the underlying struct
+If you want to watch a file for changes, the "watch" tag has to be set to true and the underlying struct
 has to implement the envi.FileWatcher interface.
 
 While using the "default" tag, the "env" tag can be omitted. If not omitted, the value from the
@@ -86,7 +86,7 @@ Example config:
 	type Config struct {
 		Environment string   `env:"ENVIRONMENT" required:"true"`
 		YAMLConfig  YAMLFile `type:"yaml" watch:"true" default:"./config.yaml"`
-		TextConfig  Textfile `env:"MY_TEXT_CONFIG_FILE" type:"text"`
+		TextConfig  TextFile `env:"MY_TEXT_CONFIG_FILE" type:"text"`
 	}
 
 	type YAMLFile struct {
@@ -102,18 +102,18 @@ Example config:
 		fmt.Println("error while reloading YAML file:", err)
 	}
 
-	type Textfile struct {
+	type TextFile struct {
 		Value string `default:"bar"`
 	}
 
 Available tags are:
   - default: default value (supports file paths for files and standard data types bool, float32, float64, int32, int64, string)
   - env: environment variable name
-  - type: describes the file type (json, yaml, text)
-  - required: indicates that the field is required
+  - type: describes the file type (json, yaml, text), defaults to yaml if omitted
+  - required: indicates that the field is required, "Load()" will return an error in this case
   - watch: indicates that the file should be watched for changes
 */
-func (e *Envi) LoadConfig(config any) error {
+func (e *Envi) Load(config any) error {
 	const errMsg = "error while getting config: %w"
 
 	err := e.loadConfig(config)

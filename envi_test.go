@@ -74,7 +74,7 @@ func Test_DefaultTag(t *testing.T) {
 
 			e := envi.New()
 
-			err := e.LoadConfig(&tc.config)
+			err := e.Load(&tc.config)
 			switch {
 			case err != nil && tc.expectedErr == nil:
 				t.Errorf("expected no error but got %v", err)
@@ -106,11 +106,26 @@ func Test_RequiredTag(t *testing.T) {
 		envvars        map[string]string
 		expectedErr    error
 	}{
-		"required field missing": {
+		"required field missing returns error": {
 			config:         Config{},
 			expectedConfig: Config{},
 			envvars:        nil,
-			expectedErr:    errors.New("field Environment is required\n"),
+			expectedErr: &envi.ValidationError{
+				[]error{&envi.FieldRequiredError{
+					FieldName: "Environment",
+				}},
+			},
+		},
+		"required fields all present is passes validation": {
+			config: Config{},
+			expectedConfig: Config{
+				Peter:       "PAN",
+				Environment: "dev",
+			},
+			envvars: map[string]string{
+				"ENVIRONMENT": "dev",
+			},
+			expectedErr: nil,
 		},
 	}
 
@@ -122,7 +137,7 @@ func Test_RequiredTag(t *testing.T) {
 
 			e := envi.New()
 
-			err := e.LoadConfig(&tc.config)
+			err := e.Load(&tc.config)
 			switch {
 			case err != nil && tc.expectedErr == nil:
 				t.Errorf("expected no error but got %v", err)
@@ -145,20 +160,11 @@ type MightyConfig struct {
 	WaitGroup *sync.WaitGroup
 	Name      string   `yaml:"PETER" required:"true"`
 	Tenants   []string `yaml:"TENANTS"`
-	Foo       string   `yaml:"FOO" default:"bar"`
-	Int32     int32    `default:"123"`
-	Int64     int64    `default:"123456"`
 }
 
 type Config struct {
 	MightyConfig MightyConfig `env:"ENVI_TEST111" watch:"true" default:"./test.yaml"`
-	TextFile     Textfile     `env:"TEXT_FILE" type:"text" default:"./test.yaml"`
 	ServiceName  string       `env:"SERVICE_NAME" default:"envi-test"`
-}
-
-type Textfile struct {
-	Text  string `default:"blabla"`
-	Text2 string `default:"blabla2"`
 }
 
 func (m MightyConfig) OnChange() {
@@ -169,7 +175,7 @@ func (m MightyConfig) OnError(err error) {
 	fmt.Println(err)
 }
 
-func Test_Basic(t *testing.T) {
+func Test_Filewatcher(t *testing.T) {
 	t.Setenv("ENVI_TEST", "./test.yaml")
 
 	config := Config{
@@ -194,7 +200,7 @@ func Test_Basic(t *testing.T) {
 		}
 	})
 
-	err := enviClient.LoadConfig(&config)
+	err := enviClient.Load(&config)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -218,5 +224,81 @@ func Test_Basic(t *testing.T) {
 	err = enviClient.Close()
 	if err != nil {
 		t.Fatal(err)
+	}
+}
+
+func Test_ParseFiles(t *testing.T) {
+	type YAMLFile struct {
+		PETER string `yaml:"PETER"`
+	}
+
+	type JSONFile struct {
+		GUENTHER string `json:"GUENTHER"`
+	}
+
+	type TextFile struct {
+		Value string
+	}
+
+	type Config struct {
+		YamlFile YAMLFile `default:"./test.yaml" type:"yaml"`
+		JsonFile JSONFile `default:"./test.json" type:"json"`
+		TextFile TextFile `default:"./test" type:"text"`
+	}
+
+	if err := os.WriteFile(
+		"test.yaml",
+		[]byte(fmt.Sprintf("%s: %s", "PETER", "PAN")),
+		0o664,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.WriteFile(
+		"test.json",
+		[]byte(fmt.Sprintf("{\"%s\": \"%s\"}", "GUENTHER", "NETZER")),
+		0o664,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.WriteFile(
+		"test",
+		[]byte("foobar"),
+		0o664,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() {
+		if err := os.Remove("test.yaml"); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Remove("test.json"); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Remove("test"); err != nil {
+			t.Fatal(err)
+		}
+	})
+
+	var myConfig Config
+
+	enviClient := envi.New()
+	err := enviClient.Load(&myConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if myConfig.YamlFile.PETER != "PAN" {
+		t.Fatal("expected PAN")
+	}
+
+	if myConfig.JsonFile.GUENTHER != "NETZER" {
+		t.Fatal("expected NETZER")
+	}
+
+	if myConfig.TextFile.Value != "foobar" {
+		t.Fatal("expected foobar")
 	}
 }

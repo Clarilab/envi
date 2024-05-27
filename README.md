@@ -3,131 +3,96 @@
 ## Installation
 
 ```shell
-go get github.com/Clarilab/envi/v2
+go get github.com/Clarilab/envi/v3
 ```
 
 ## Importing
 
 ```go
-import "github.com/Clarilab/envi/v2"
+import "github.com/Clarilab/envi/v3"
 ```
 
-## Available functions
+## Usage
+
+### Config struct
+
+To use envi, you have to create a struct which resembles your config structure that you want to parse.
 
 ```go
-	// FromMap loads the given key-value pairs and loads them into the local map.
-	FromMap(map[string]string)
+type Config struct {
+	YamlFile YAMLFile `env:"my-path-to.yaml" watch:"true"`
+	JsonFile JSONFile `env:"my-path-to.json" default:"./my-default-path.json" type:"json"`
+	TextFile TextFile `env:"my-path-to.txt" type:"text"`
+	Environment string `default:"prod"`
+}
 
-	// LoadEnv loads the given keys from environment.
-	LoadEnv(vars ...string)
+type TextFile struct {
+	Value string `default:"foobar"`
+}
 
-	// LoadYAMLFilesFromEnvPaths loads yaml files from the paths in the given environment variables.
-	LoadYAMLFilesFromEnvPaths(vars ...string) error 
+type YAMLFile struct {
+	StringField string `yaml:"STRING_FIELD"`
+	IntField int `yaml:"INT_FIELD" default:"1337"`
+	Int64Field int64 `yaml:"INT_64_FIELD" required:"true" default:"1337"`
+	BoolField bool `yaml:"BOOL_FIELD"`
+	FloatField float32 `yaml:"FLOAT_FIELD" required:"true"`
+	Float64Field float64 `yaml:"FLOAT_64_FIELD" default:"3.1415926"`
+}
 
-	// LoadYAMLFilesFromEnvPaths loads json files from the paths in the given environment variables.
-	LoadJSONFilesFromEnvPaths(vars ...string) error
+// necessary func to enable file watching
+func (y YAMLFile) OnChange() {
+	// do something when the config filed changes
+}
 
-	// LoadYAMLFilesFromEnvPaths loads the file content from the path in the given environment variable to the value of the given key.
-	LoadFileFromEnvPath(key string, envPath string) error 
+// necessary func to enable file watching
+func (y YAMLFile) OnError(err error) {
+	// do something when loading a config update fails
+}
 
-	// LoadFile loads a string value under given key from a file.
-	LoadFile(key, filePath string) error
-
-	// LoadJSON loads key-value pairs from one or many json blobs.
-	LoadJSON(...[]byte) error
-
-	// LoadAndWatchJSONFile loads key-value pairs from a json file,
-	// then watches that file and reloads it when it changes.
-	// Accepts optional callback functions that are executed
-	// after the file was reloaded. Returns and error when something
-	// goes wrong. When no error is returned, returns a close function
-	// that should be deferred in the calling function, and an error
-	// channel where errors that occur during the file watching get sent.
-	LoadAndWatchJSONFile(path string, callbacks ...func() error) (error, func() error, <-chan error)
-
-	// LoadJSONFile loads key-value pairs from a json file.
-	LoadJSONFile(path string) error
-
-	// LoadJSONFiles loads key-value pairs from one or more json files.
-	LoadJSONFiles(...string) error
-
-	// LoadYAML loads key-value pairs from one or many yaml blobs.
-	LoadYAML(...[]byte) error
-
-	// LoadAndWatchYAMLFile loads key-value pairs from a yaml file,
-	// then watches that file and reloads it when it changes.
-	// Accepts optional callback functions that are executed
-	// after the file was reloaded. Returns and error when something
-	// goes wrong. When no error is returned, returns a close function
-	// that should be deferred in the calling function, and an error
-	// channel where errors that occur during the file watching get sent.
-	LoadAndWatchYAMLFile(path string, callbacks ...func() error,) (error, func() error, <-chan error)
-
-	// LoadYAMLFile loads key-value pairs from a yaml file.
-	LoadYAMLFile(path string) error 
-
-	// LoadYAMLFiles loads key-value pairs from one or more yaml files.
-	LoadYAMLFiles(...string) error
-
-	// EnsureVars checks, if all given keys have a non-empty value.
-	EnsureVars(...string) error
-
-	// ToEnv writes all key-value pairs to the environment.
-	ToEnv()
-
-	// ToMap returns a map, containing all key-value pairs.
-	ToMap() map[string]string
-```
-
-### Examples
-
-If you want to load key-values pairs from one or more json files into a map, you can use envi something like this.
-```go
-e := envi.NewEnvi()
-err := e.LoadJSONFiles("./path/to/my/file.json", "./path/to/another/file.json")
-
-myEnvVars := e.ToMap()
-
-lookMom := myEnvVars["LOOK_MOM"]
-```
-
-To load environment variables something like this can be useful.
-```go
-e := envi.NewEnvi()
-err := e.LoadEnv("HOME", "LOOK_MOM")
-
-myEnvVars := e.ToMap()
-
-lookMom := myEnvVars["LOOK_MOM"]
-```
-
-In many cases you want to ensure, that variables have a non empty value. This can be checked by using `EnsureVars()`.
-```go
-e := envi.NewEnvi()
-err := e.LoadEnv("HOME", "LOOK_MOM")
-
-err := e.EnsureVars("HOME")
-if err != nil {
-  // the error contains a list of missing vars.
-  fmt.Println(err.MissingVars)
-
-  // the Error() method prints the missing vars, too.
-  fmt.Println(err
+type JSONFile struct {
+	Foo string `json:"FOO"`
+	Bar int64 `json:"BAR"`
 }
 ```
 
-## Secretfile Example
+#### Available Tags
 
-A json file should look like this.
-```json
-{
-    "SHELL": "csh",
-    "PAGER": "more"
+  - default: default value (supports file paths for files and standard data types bool, float32, float64, int32, int64, string)
+  - env: environment variable name
+  - type: describes the file type (json, yaml, text), defaults to yaml if omitted
+  - required: indicates that the field is required, "envi.Load()" will return an error in this case
+  - watch: indicates that the file should be watched for changes
+
+#### File watcher
+
+To watch for changes in config files, for example while using a vault, the underlying struct has to implement the envi.FileWatcher interface:
+
+```go
+type FileWatcher interface {
+	OnChange()
+	OnError(error)
 }
 ```
 
-A basic yaml file like this.
-```yaml
-SHELL: bash
-PAGER: less
+### Load config
+
+To load environment variables into your config:
+
+```go
+e := envi.New()
+
+var myConfig Config
+err := e.Load(&myConfig)
+// some error handling as a good developer should do
 ```
+
+Load loads all config files and environment variables into the input struct.
+Supported types are JSON, YAML and text files, as well as strings on the struct root level.
+
+If you want to watch a file for changes, the "watch" tag has to be set to true and the underlying struct
+has to implement the envi.FileWatcher interface.
+
+While using the "default" tag, the "env" tag can be omitted. If not omitted, the value from the
+environment variable will be used.
+
+When using the text file type, envi will try to load the file content into the first string field of that struct.
