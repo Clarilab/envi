@@ -7,7 +7,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/Clarilab/envi/v2"
+	"github.com/Clarilab/envi/v3"
 )
 
 // !!! Attention: The tests in this file are not meant to be run in parallel because of the t.Setenv usage !!!
@@ -228,12 +228,16 @@ func Test_Filewatcher(t *testing.T) {
 }
 
 func Test_ParseFiles(t *testing.T) {
-	type YAMLFile struct {
-		PETER string `yaml:"PETER"`
+	type JSONFile struct {
+		URL    string `json:"URL"`
+		Editor string `json:"EDITOR"`
+		Home   string `json:"HOME"`
 	}
 
-	type JSONFile struct {
-		GUENTHER string `json:"GUENTHER"`
+	type YAMLFile struct {
+		Shell string `yaml:"SHELL"`
+		Pager string `yaml:"PAGER"`
+		Calc  string `yaml:"CALC"`
 	}
 
 	type TextFile struct {
@@ -241,46 +245,10 @@ func Test_ParseFiles(t *testing.T) {
 	}
 
 	type Config struct {
-		YamlFile YAMLFile `default:"./test.yaml" type:"yaml"`
-		JsonFile JSONFile `default:"./test.json" type:"json"`
-		TextFile TextFile `default:"./test" type:"text"`
+		JsonFile JSONFile `default:"./testdata/valid.json" type:"json"`
+		YamlFile YAMLFile `default:"./testdata/valid.yaml" type:"yaml"`
+		TextFile TextFile `default:"./testdata/valid.txt" type:"text"`
 	}
-
-	if err := os.WriteFile(
-		"test.yaml",
-		[]byte(fmt.Sprintf("%s: %s", "PETER", "PAN")),
-		0o664,
-	); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := os.WriteFile(
-		"test.json",
-		[]byte(fmt.Sprintf("{\"%s\": \"%s\"}", "GUENTHER", "NETZER")),
-		0o664,
-	); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := os.WriteFile(
-		"test",
-		[]byte("foobar"),
-		0o664,
-	); err != nil {
-		t.Fatal(err)
-	}
-
-	t.Cleanup(func() {
-		if err := os.Remove("test.yaml"); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.Remove("test.json"); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.Remove("test"); err != nil {
-			t.Fatal(err)
-		}
-	})
 
 	var myConfig Config
 
@@ -290,15 +258,23 @@ func Test_ParseFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if myConfig.YamlFile.PETER != "PAN" {
-		t.Fatal("expected PAN")
+	expectedConfig := Config{
+		JsonFile: JSONFile{
+			URL:    "http://foobar.de",
+			Editor: "emacs",
+			Home:   "/home/user",
+		},
+		YamlFile: YAMLFile{
+			Shell: "csh",
+			Pager: "more",
+			Calc:  "bc",
+		},
+		TextFile: TextFile{
+			Value: "valid string",
+		},
 	}
 
-	if myConfig.JsonFile.GUENTHER != "NETZER" {
-		t.Fatal("expected NETZER")
-	}
-
-	if myConfig.TextFile.Value != "foobar" {
-		t.Fatal("expected foobar")
+	if myConfig != expectedConfig {
+		t.Errorf("expected %+v but got %+v", expectedConfig, myConfig)
 	}
 }
