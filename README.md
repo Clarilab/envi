@@ -20,10 +20,10 @@ To use envi, you have to create a struct which resembles your config structure t
 
 ```go
 type Config struct {
-	YamlFile YAMLFile `env:"my-path-to.yaml" watch:"true"`
-	JsonFile JSONFile `env:"my-path-to.json" default:"./my-default-path.json" type:"json"`
-	TextFile TextFile `env:"my-path-to.txt" type:"text"`
-	Environment string `default:"prod"`
+	YamlFile 	YAMLFile `env:"my-path-to.yaml" watch:"true"`
+	JsonFile 	JSONFile `env:"my-path-to.json" default:"./my-default-path.json" type:"json"`
+	TextFile 	TextFile `env:"my-path-to.txt" type:"text"`
+	Environment string 	 `default:"prod"`
 }
 
 type TextFile struct {
@@ -31,11 +31,11 @@ type TextFile struct {
 }
 
 type YAMLFile struct {
-	StringField string `yaml:"STRING_FIELD"`
-	IntField int `yaml:"INT_FIELD" default:"1337"`
-	Int64Field int64 `yaml:"INT_64_FIELD" required:"true" default:"1337"`
-	BoolField bool `yaml:"BOOL_FIELD"`
-	FloatField float32 `yaml:"FLOAT_FIELD" required:"true"`
+	StringField  string `yaml:"STRING_FIELD"`
+	IntField 	 int 	`yaml:"INT_FIELD" default:"1337"`
+	Int64Field   int64 	`yaml:"INT_64_FIELD" required:"true" default:"1337"`
+	BoolField	 bool 	`yaml:"BOOL_FIELD"`
+	FloatField 	 float32 `yaml:"FLOAT_FIELD" required:"true"`
 	Float64Field float64 `yaml:"FLOAT_64_FIELD" default:"3.1415926"`
 }
 
@@ -51,7 +51,7 @@ func (y YAMLFile) OnError(err error) {
 
 type JSONFile struct {
 	Foo string `json:"FOO"`
-	Bar int64 `json:"BAR"`
+	Bar int64  `json:"BAR"`
 }
 ```
 
