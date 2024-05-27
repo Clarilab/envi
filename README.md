@@ -80,6 +80,7 @@ To load environment variables into your config:
 
 ```go
 e := envi.New()
+defer e.Close()
 
 var myConfig Config
 err := e.Load(&myConfig)
