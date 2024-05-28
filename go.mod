@@ -1,9 +1,10 @@
-module github.com/Clarilab/envi/v2
+module github.com/Clarilab/envi/v3
 
-go 1.15
+go 1.22
 
 require (
 	github.com/fsnotify/fsnotify v1.7.0
-	github.com/stretchr/testify v1.9.0
-	gopkg.in/yaml.v2 v2.4.0
+	gopkg.in/yaml.v3 v3.0.1
 )
+
+require golang.org/x/sys v0.4.0 // indirect

@@ -1,359 +1,437 @@
 package envi
 
 import (
+	"cmp"
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
+	"reflect"
+	"strconv"
+	"strings"
 	"sync"
 
 	"github.com/fsnotify/fsnotify"
-	"gopkg.in/yaml.v2"
+	"gopkg.in/yaml.v3"
 )
 
-// Envi is a config loader to load all sorts of configuration files.
+const (
+	tagDefault  = "default"
+	tagEnv      = "env"
+	tagType     = "type"
+	tagRequired = "required"
+	tagWatch    = "watch"
+)
+
+// unmarshalFunc describes how to unmarshal a file.
+type unmarshalFunc func([]byte, any) error
+
+// FileWatcher is an interface for watching file changes.
+type FileWatcher interface {
+	OnChange()
+	OnError(error)
+}
+
+type fileWatcherInstance struct {
+	watcher *fsnotify.Watcher
+	cancel  context.CancelFunc
+}
+
+// Envi holds references to all active file watchers.
 type Envi struct {
-	mu         sync.Mutex
-	loadedVars map[string]string
+	fileWatchers map[string]fileWatcherInstance
 }
 
-// NewEnvi creates a new Envi instance.
-func NewEnvi() *Envi {
+// Close closes all file watchers attached to the Envi instance.
+func (e *Envi) Close() error {
+	var errs []error
+
+	for filePath, instance := range e.fileWatchers {
+		instance.cancel()
+
+		if err := instance.watcher.Close(); err != nil {
+			errs = append(errs, fmt.Errorf("failed to close watcher for file %s with error: %w", filePath, err))
+		}
+	}
+
+	if len(errs) > 0 {
+		return &CloseError{Errors: errs}
+	}
+
+	return nil
+}
+
+// New creates a new Envi instance.
+func New() *Envi {
 	return &Envi{
-		mu:         sync.Mutex{},
-		loadedVars: make(map[string]string),
+		fileWatchers: make(map[string]fileWatcherInstance, 0),
 	}
 }
 
-// FromMap loads the given key-value pairs and loads them into the local map.
-func (envi *Envi) FromMap(vars map[string]string) {
-	envi.mu.Lock()
+/*
+Load loads all config files and environment variables into the input struct.
+Supported types are JSON, YAML and text files, as well as strings.
 
-	for key := range vars {
-		envi.loadedVars[key] = vars[key]
+If you want to watch a file for changes, the "watch" tag has to be set to true and the underlying struct
+has to implement the envi.FileWatcher interface.
+
+While using the "default" tag, the "env" tag can be omitted. If not omitted, the value from the
+environment variable will be used.
+
+When using the text file type, envi will try to load the file content into the first string field of that struct.
+
+Example config:
+
+	type Config struct {
+		Environment string   `env:"ENVIRONMENT" required:"true"`
+		YAMLConfig  YAMLFile `type:"yaml" watch:"true" default:"./config.yaml"`
+		TextConfig  TextFile `env:"MY_TEXT_CONFIG_FILE" type:"text"`
 	}
 
-	envi.mu.Unlock()
-}
-
-// LoadEnv loads the given keys from the environment variables.
-func (envi *Envi) LoadEnv(vars ...string) {
-	envi.mu.Lock()
-
-	for _, key := range vars {
-		envi.loadedVars[key] = os.Getenv(key)
+	type YAMLFile struct {
+		Key1 string `yaml:"key1" required:"true"`
+		Key2 string `yaml:"key2"`
 	}
 
-	envi.mu.Unlock()
-}
-
-// LoadYAMLFilesFromEnvPaths loads yaml files from the paths in the given environment variables.
-func (envi *Envi) LoadYAMLFilesFromEnvPaths(vars ...string) error {
-	const errMessage = "failed to load yaml files from env paths: %w"
-	for _, key := range vars {
-		path := os.Getenv(key)
-
-		if path == "" {
-			return fmt.Errorf(errMessage, &EnvVarNotFoundError{key})
-		}
-
-		if err := envi.LoadYAMLFile(path); err != nil {
-			return fmt.Errorf(errMessage, err)
-		}
+	func (y *YAMLFile) OnChange() {
+		fmt.Println("YAML file changed")
 	}
 
-	return nil
-}
-
-// LoadYAMLFilesFromEnvPaths loads json files from the paths in the given environment variables.
-func (envi *Envi) LoadJSONFilesFromEnvPaths(vars ...string) error {
-	const errMessage = "failed to load json files from env paths: %w"
-
-	for _, key := range vars {
-		path := os.Getenv(key)
-
-		if path == "" {
-			return fmt.Errorf(errMessage, &EnvVarNotFoundError{key})
-		}
-
-		if err := envi.LoadJSONFile(path); err != nil {
-			return fmt.Errorf(errMessage, err)
-		}
+	func (y *YAMLFile) OnError(err error) {
+		fmt.Println("error while reloading YAML file:", err)
 	}
 
-	return nil
-}
-
-// LoadYAMLFilesFromEnvPaths loads the file content from the path in the given environment variable
-// to the value of the given key.
-func (envi *Envi) LoadFileFromEnvPath(key string, envPath string) error {
-	const errMessage = "failed to load file from env paths: %w"
-
-	filePath := os.Getenv(envPath)
-
-	if filePath == "" {
-		return fmt.Errorf(errMessage, &EnvVarNotFoundError{envPath})
+	type TextFile struct {
+		Value string `default:"bar"`
 	}
 
-	if err := envi.LoadFile(key, filePath); err != nil {
-		return fmt.Errorf(errMessage, err)
-	}
+Available tags are:
+  - default: default value (supports file paths for files and standard data types bool, float32, float64, int32, int64, string)
+  - env: environment variable name
+  - type: describes the file type (json, yaml, text), defaults to yaml if omitted
+  - required: indicates that the field is required, "Load()" will return an error in this case
+  - watch: indicates that the file should be watched for changes
+*/
+func (e *Envi) Load(config any) error {
+	const errMsg = "error while getting config: %w"
 
-	return nil
-}
-
-// LoadFile loads a string value under given key from a file.
-func (envi *Envi) LoadFile(key, filePath string) error {
-	const errMessage = "failed to load file: %w"
-
-	blob, err := os.ReadFile(filePath)
+	err := e.loadConfig(config)
 	if err != nil {
-		return fmt.Errorf(errMessage, &FailedToReadFileError{filePath})
+		return fmt.Errorf(errMsg, err)
 	}
 
-	envi.mu.Lock()
-	envi.loadedVars[key] = string(blob)
-	envi.mu.Unlock()
+	errs := validate(config)
+	if len(errs) > 0 {
+		return fmt.Errorf(errMsg, &ValidationError{Errors: errs})
+	}
 
 	return nil
 }
 
-// LoadJSONFiles loads key-value pairs from one or more json files.
-func (envi *Envi) LoadJSONFiles(paths ...string) error {
-	const errMessage = "failed to load json files: %w"
+func (e *Envi) loadConfig(config any) error {
+	const errMsg = "error while loading config: %w"
 
-	for i := range paths {
-		if err := envi.LoadJSONFile(paths[i]); err != nil {
-			return fmt.Errorf(errMessage, err)
+	v := reflect.ValueOf(config)
+	t := reflect.TypeOf(config)
+
+	if v.Kind() != reflect.Pointer {
+		return fmt.Errorf(errMsg, &InvalidKindError{
+			FieldName: t.Name(),
+			Expected:  "pointer",
+			Got:       v.Kind().String(),
+		})
+	}
+
+	v = resolveValuePointer(v)
+	t = resolveTypePointer(t)
+
+	if v.Kind() != reflect.Struct {
+		return fmt.Errorf(errMsg, &InvalidKindError{
+			FieldName: t.Name(),
+			Expected:  "struct",
+			Got:       v.Kind().String(),
+		})
+	}
+
+	for i := 0; i < v.NumField(); i++ {
+		field := v.Field(i)
+		field = resolveValuePointer(field)
+
+		defaultTag := getStructTag(t.Field(i), tagDefault)
+		envTag := getStructTag(t.Field(i), tagEnv)
+
+		if envTag == "" && defaultTag == "" {
+			return fmt.Errorf(errMsg, &MissingTagError{Tag: "env or default"})
+		}
+
+		switch field.Kind() {
+		case reflect.Struct:
+			typeTag := getStructTag(t.Field(i), tagType)
+			watchTag := getStructTag(t.Field(i), tagWatch)
+
+			path := cmp.Or(os.Getenv(envTag), defaultTag)
+
+			var err error
+			path, err = filepath.Abs(path)
+			if err != nil {
+				return fmt.Errorf(errMsg, err)
+			}
+
+			typeVal := cmp.Or(typeTag, "yaml")
+
+			unmarshalMap := map[string]unmarshalFunc{
+				"yaml": yaml.Unmarshal,
+				"yml":  yaml.Unmarshal,
+				"json": json.Unmarshal,
+				"text": unmarshalText,
+			}
+
+			unmarshalFunc, ok := unmarshalMap[typeVal]
+			if !ok {
+				return fmt.Errorf(errMsg, &InvalidTagError{Tag: "type"})
+			}
+
+			err = loadFile(field, path, unmarshalFunc)
+			if err != nil {
+				return fmt.Errorf(errMsg, err)
+			}
+
+			if watchTag == "true" {
+				err = e.watchFile(field, path, unmarshalFunc)
+				if err != nil {
+					return fmt.Errorf(errMsg, err)
+				}
+			}
+		case reflect.String:
+			tagVal := getStructTag(t.Field(i), tagEnv)
+
+			if tagVal == "" && defaultTag == "" {
+				return fmt.Errorf(errMsg, &MissingTagError{Tag: "env or default"})
+			}
+
+			field.SetString(cmp.Or(os.Getenv(tagVal), defaultTag))
+		default:
+			return fmt.Errorf(errMsg, &InvalidKindError{
+				FieldName: field.Type().Name(),
+				Expected:  "string, struct",
+				Got:       field.Kind().String(),
+			})
 		}
 	}
 
 	return nil
 }
 
-// LoadJSONFile loads key-value pairs from a json file.
-func (envi *Envi) LoadJSONFile(path string) error {
-	const errMessage = "failed to load json file: %w"
+func unmarshalText(data []byte, v any) error {
+	val := strings.Trim(string(data), "\n")
+
+	rv := reflect.ValueOf(v)
+	rv = resolveValuePointer(rv)
+
+	var valueSet bool
+
+	for i := range rv.NumField() {
+		if rv.Field(i).Kind() == reflect.String {
+			rv.Field(i).SetString(val)
+			valueSet = true
+			break
+		}
+	}
+
+	if !valueSet {
+		return fmt.Errorf("failed to find target value for text file")
+	}
+
+	return nil
+}
+
+func loadFile(field reflect.Value, path string, unmarshal unmarshalFunc) error {
+	const errMsg = "error while loading file: %w"
+
+	err := handleDefaults(field)
+	if err != nil {
+		return fmt.Errorf(errMsg, err)
+	}
 
 	blob, err := os.ReadFile(path)
 	if err != nil {
-		return fmt.Errorf(errMessage, &FailedToReadFileError{path})
+		return fmt.Errorf(errMsg, err)
 	}
 
-	err = envi.LoadJSON(blob)
+	err = unmarshal(blob, field.Addr().Interface())
 	if err != nil {
-		return fmt.Errorf(errMessage, err)
+		return fmt.Errorf(errMsg, err)
 	}
 
 	return nil
 }
 
-// LoadAndWatchJSONFile loads key-value pairs from a json file,
-// then watches that file and reloads it when it changes.
-// Accepts optional callback functions that are executed
-// after the file was reloaded. Returns and error when something
-// goes wrong. When no error is returned, returns a close function
-// that should be deferred in the calling function, and an error
-// channel where errors that occur during the file watching get sent.
-func (envi *Envi) LoadAndWatchJSONFile(path string, callback ...func() error) (error, func() error, <-chan error) {
-	const errMessage = "failed to load and watch json file: %w"
+func handleDefaults(field reflect.Value) error {
+	const errMsg = "error while handling defaults: %w"
 
-	err, closeFunc, watchErrChan := envi.loadAndWatchFile(path, envi.LoadJSONFile, callback...)
-	if err != nil {
-		return fmt.Errorf(errMessage, err), nil, nil
-	}
+	for i := range field.NumField() {
+		defaultTag := getStructTag(field.Type().Field(i), tagDefault)
 
-	return nil, closeFunc, watchErrChan
-}
+		if defaultTag != "" {
+			switch field.Field(i).Kind() {
+			case reflect.Int32:
+				fallthrough
+			case reflect.Int64:
+				parsedInt, err := strconv.ParseInt(defaultTag, 10, 64)
+				if err != nil {
+					return fmt.Errorf(errMsg, &ParsingError{Type: "int", Err: err})
+				}
 
-// LoadJSON loads key-value pairs from one or many json blobs.
-func (envi *Envi) LoadJSON(blobs ...[]byte) error {
-	const errMessage = "failed to load json: %w"
+				field.Field(i).SetInt(parsedInt)
+			case reflect.Float32:
+				fallthrough
+			case reflect.Float64:
+				parsedFloat, err := strconv.ParseFloat(defaultTag, 64)
+				if err != nil {
+					return fmt.Errorf(errMsg, &ParsingError{Type: "float", Err: err})
+				}
 
-	for i := range blobs {
-		var decoded map[string]string
+				field.Field(i).SetFloat(parsedFloat)
+			case reflect.String:
+				field.Field(i).SetString(defaultTag)
+			case reflect.Bool:
+				b, err := strconv.ParseBool(defaultTag)
+				if err != nil {
+					return fmt.Errorf(errMsg, &ParsingError{Type: "bool", Err: err})
+				}
 
-		err := json.Unmarshal(blobs[i], &decoded)
-		if err != nil {
-			return fmt.Errorf(errMessage, err)
-		}
-
-		envi.mu.Lock()
-
-		for key := range decoded {
-			envi.loadedVars[key] = decoded[key]
-		}
-
-		envi.mu.Unlock()
-	}
-
-	return nil
-}
-
-// LoadYAMLFiles loads key-value pairs from one or more yaml files.
-func (envi *Envi) LoadYAMLFiles(paths ...string) error {
-	const errMessage = "failed to load yaml files: %w"
-
-	for i := range paths {
-		if err := envi.LoadYAMLFile(paths[i]); err != nil {
-			return fmt.Errorf(errMessage, err)
+				field.Field(i).SetBool(b)
+			default:
+				return fmt.Errorf(errMsg, &InvalidKindError{
+					FieldName: field.Type().Field(i).Name,
+					Expected:  "string, int, float, bool",
+					Got:       field.Field(i).Kind().String(),
+				})
+			}
 		}
 	}
 
 	return nil
 }
 
-// LoadYAMLFile loads key-value pairs from a yaml file.
-func (envi *Envi) LoadYAMLFile(path string) error {
-	const errMessage = "failed to load yaml file: %w"
-
-	blob, err := os.ReadFile(path)
-	if err != nil {
-		return fmt.Errorf(errMessage, &FailedToReadFileError{path})
-	}
-
-	err = envi.LoadYAML(blob)
-	if err != nil {
-		return fmt.Errorf(errMessage, err)
-	}
-
-	return nil
-}
-
-// LoadAndWatchYAMLFile loads key-value pairs from a yaml file,
-// then watches that file and reloads it when it changes.
-// Accepts optional callback functions that are executed
-// after the file was reloaded. Returns and error when something
-// goes wrong. When no error is returned, returns a close function
-// that should be deferred in the calling function, and an error
-// channel where errors that occur during the file watching get sent.
-func (envi *Envi) LoadAndWatchYAMLFile(path string, callbacks ...func() error) (error, func() error, <-chan error) {
-	const errMessage = "failed to load and watch yaml file: %w"
-
-	err, closeFunc, watchErrChan := envi.loadAndWatchFile(path, envi.LoadYAMLFile, callbacks...)
-	if err != nil {
-		return fmt.Errorf(errMessage, err), nil, nil
-	}
-
-	return nil, closeFunc, watchErrChan
-}
-
-// LoadYAML loads key-value pairs from one or many yaml blobs.
-func (envi *Envi) LoadYAML(blobs ...[]byte) error {
-	const errMessage = "failed to load yaml file: %w"
-
-	for i := range blobs {
-		var decoded map[string]string
-
-		err := yaml.Unmarshal(blobs[i], &decoded)
-		if err != nil {
-			return fmt.Errorf(errMessage, err)
-		}
-
-		envi.mu.Lock()
-
-		for key := range decoded {
-			envi.loadedVars[key] = decoded[key]
-		}
-
-		envi.mu.Unlock()
-	}
-
-	return nil
-}
-
-// EnsureVars checks, if all given keys have a non-empty value.
-func (envi *Envi) EnsureVars(requiredVars ...string) error {
-	var missingVars []string
-
-	for _, key := range requiredVars {
-		if envi.loadedVars[key] == "" {
-			missingVars = append(missingVars, key)
-		}
-	}
-
-	if len(missingVars) > 0 {
-		return &RequiredEnvVarsMissing{MissingVars: missingVars}
-	}
-
-	return nil
-}
-
-// ToEnv writes all key-value pairs to the environment.
-func (envi *Envi) ToEnv() {
-	for key := range envi.loadedVars {
-		os.Setenv(key, envi.loadedVars[key])
-	}
-}
-
-// ToMap returns a map, containing all key-value pairs.
-func (envi *Envi) ToMap() map[string]string {
-	return envi.loadedVars
-}
-
-func (envi *Envi) loadAndWatchFile(
-	path string,
-	loadFunc func(string) error,
-	callbacks ...func() error,
-) (error, func() error, <-chan error) {
-	const (
-		errMessage        = "failed to load and watch file: %w"
-		errChanBufferSize = 10
-	)
-
-	err := loadFunc(path)
-	if err != nil {
-		return fmt.Errorf(errMessage, err), nil, nil
-	}
+func (e *Envi) watchFile(field reflect.Value, path string, unmarshal unmarshalFunc) error {
+	const errMsg = "error while watching file: %w"
 
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
-		return fmt.Errorf(errMessage, err), nil, nil
+		return fmt.Errorf(errMsg, err)
 	}
 
-	watchErrChan := make(chan error, errChanBufferSize)
+	ctx, cancel := context.WithCancel(context.Background())
 
-	go envi.fileWatcher(watcher, path, loadFunc, watchErrChan, callbacks...)
+	e.fileWatchers[path] = fileWatcherInstance{
+		watcher: watcher,
+		cancel:  cancel,
+	}
+
+	go e.fileWatcher(ctx, watcher, field, path, unmarshal)
 
 	err = watcher.Add(path)
 	if err != nil {
 		watcher.Close()
-		return fmt.Errorf(errMessage, err), nil, nil
+
+		return fmt.Errorf(errMsg, err)
 	}
 
-	return nil, watcher.Close, watchErrChan
+	return nil
+}
+func validate(e any) []error {
+	v := reflect.ValueOf(e)
+	t := reflect.TypeOf(e)
+
+	v = resolveValuePointer(v)
+	t = resolveTypePointer(t)
+
+	errors := make([]error, 0)
+
+	for i := 0; i < v.NumField(); i++ {
+		field := v.Field(i)
+
+		if field.Kind() == reflect.Struct {
+			errs := validate(field.Interface())
+			if len(errs) > 0 {
+				errors = append(errors, errs...)
+			}
+		}
+
+		required := getStructTag(t.Field(i), tagRequired)
+
+		if required == "true" && field.IsZero() {
+			errors = append(errors, &FieldRequiredError{FieldName: t.Field(i).Name})
+		}
+	}
+
+	return errors
 }
 
-func (envi *Envi) fileWatcher(
+func resolveValuePointer(rv reflect.Value) reflect.Value {
+	if rv.Kind() == reflect.Pointer {
+		rv = resolveValuePointer(rv.Elem())
+	}
+
+	return rv
+}
+
+func resolveTypePointer(rt reflect.Type) reflect.Type {
+	if rt.Kind() == reflect.Ptr {
+		rt = resolveTypePointer(rt.Elem())
+	}
+
+	return rt
+}
+
+func getStructTag(f reflect.StructField, tagName string) string {
+	return f.Tag.Get(tagName)
+}
+
+func (e *Envi) fileWatcher(
+	ctx context.Context,
 	watcher *fsnotify.Watcher,
+	field reflect.Value,
 	filePath string,
-	loadFunc func(string) error,
-	watchErrChan chan<- error,
-	callbacks ...func() error,
+	unmarshal func([]byte, any) error,
 ) {
+	callback, ok := field.Addr().Interface().(FileWatcher)
+	if !ok {
+		return
+	}
+
+	mutex := new(sync.Mutex)
+
 	for {
 		select {
+		case <-ctx.Done():
+			return
 		case event, ok := <-watcher.Events:
 			if !ok {
 				return
 			}
 
-			if event.Has(fsnotify.Chmod) || event.Has(fsnotify.Write) {
-				err := loadFunc(filePath)
+			if event.Has(fsnotify.Write) {
+				mutex.Lock()
+
+				err := loadFile(field, filePath, unmarshal)
 				if err != nil {
-					watchErrChan <- fmt.Errorf("error reloading watched file: %w", err)
+					callback.OnError(fmt.Errorf("error reloading watched file: %w", err))
+
 					continue
 				}
 
-				for i := range callbacks {
-					err = callbacks[i]()
-					if err != nil {
-						watchErrChan <- fmt.Errorf("error executing callback for watched file: %w", err)
-					}
-				}
+				mutex.Unlock()
+
+				callback.OnChange()
 			} else if event.Has(fsnotify.Remove) {
 				err := watcher.Add(filePath)
 				if err != nil {
-					watchErrChan <- fmt.Errorf("error reenabling watcher for file: %w", err)
+					callback.OnError(fmt.Errorf("error reenabling watcher for file: %w", err))
+
+					continue
 				}
 			}
 		case err, ok := <-watcher.Errors:
@@ -361,7 +439,7 @@ func (envi *Envi) fileWatcher(
 				return
 			}
 
-			watchErrChan <- fmt.Errorf("error while watching file: %w", err)
+			callback.OnError(fmt.Errorf("error while watching file: %w", err))
 		}
 	}
 }
