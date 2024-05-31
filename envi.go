@@ -157,7 +157,7 @@ func (e *Envi) loadConfig(config any) error {
 	for i := 0; i < v.NumField(); i++ {
 		field := v.Field(i)
 
-		// filter out unexported fields (CanSet() is fales for unexported fields)
+		// filter out unexported fields (CanSet() is false for unexported fields)
 		if !field.CanSet() {
 			continue
 		}
