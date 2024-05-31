@@ -278,3 +278,65 @@ func Test_ParseFiles(t *testing.T) {
 		t.Errorf("expected %+v but got %+v", expectedConfig, myConfig)
 	}
 }
+
+func Test_UnexportedFields(t *testing.T) {
+	type ConfigWithUnexportedField struct {
+		unexported  string
+		Peter       string `default:"PAN"`
+		Environment string `env:"ENVIRONMENT"`
+		ServiceName string `env:"SERVICE_NAME" default:"envi-test"`
+	}
+
+	testCases := map[string]struct {
+		config         ConfigWithUnexportedField
+		expectedConfig ConfigWithUnexportedField
+		envvars        map[string]string
+		expectedErr    error
+	}{
+		"unexported fields do not require a default or env tag": {
+			config: ConfigWithUnexportedField{
+				unexported:  "foo",
+				Peter:       "",
+				Environment: "",
+				ServiceName: "",
+			},
+			expectedConfig: ConfigWithUnexportedField{
+				unexported:  "foo",
+				Peter:       "PAN",
+				Environment: "test",
+				ServiceName: "my-service",
+			},
+			envvars: map[string]string{
+				"ENVIRONMENT":  "test",
+				"SERVICE_NAME": "my-service",
+			},
+			expectedErr: nil,
+		},
+	}
+
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			for k, v := range tc.envvars {
+				t.Setenv(k, v)
+			}
+
+			e := envi.New()
+
+			err := e.Load(&tc.config)
+			switch {
+			case err != nil && tc.expectedErr == nil:
+				t.Errorf("expected no error but got %v", err)
+			case err == nil && tc.expectedErr != nil:
+				t.Errorf("expected error %v but got nil", tc.expectedErr)
+			case err != nil && tc.expectedErr != nil:
+				if errors.Unwrap(err).Error() != tc.expectedErr.Error() {
+					t.Errorf("expected error %v but got %v", tc.expectedErr, err)
+				}
+			case err == nil && tc.expectedErr == nil:
+				if tc.config != tc.expectedConfig {
+					t.Errorf("expected config %+v but got %+v", tc.expectedConfig, tc.config)
+				}
+			}
+		})
+	}
+}
