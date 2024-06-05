@@ -338,7 +338,7 @@ func (e *Envi) watchFile(field reflect.Value, path string, unmarshal unmarshalFu
 
 	go e.fileWatcher(ctx, watcher, field, path, unmarshal)
 
-	err = watcher.Add(path)
+	err = watcher.Add(filepath.Dir(path)) // needs to be the directory of the file to ensure working on linux systems
 	if err != nil {
 		watcher.Close()
 
@@ -419,7 +419,12 @@ func (e *Envi) fileWatcher(
 				return
 			}
 
-			if event.Has(fsnotify.Write) {
+			// ensure we're only watching the file we're interested in
+			if filepath.Base(event.Name) != filepath.Base(filePath) {
+				continue
+			}
+
+			if event.Has(fsnotify.Create) || event.Has(fsnotify.Write) {
 				mutex.Lock()
 
 				err := loadFile(field, filePath, unmarshal)
@@ -432,13 +437,6 @@ func (e *Envi) fileWatcher(
 				mutex.Unlock()
 
 				callback.OnChange()
-			} else if event.Has(fsnotify.Remove) {
-				err := watcher.Add(filePath)
-				if err != nil {
-					callback.OnError(fmt.Errorf("error reenabling watcher for file: %w", err))
-
-					continue
-				}
 			}
 		case err, ok := <-watcher.Errors:
 			if !ok {
