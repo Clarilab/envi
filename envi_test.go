@@ -4,7 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/Clarilab/envi/v3"
@@ -157,9 +157,9 @@ func Test_RequiredTag(t *testing.T) {
 }
 
 type MightyConfig struct {
-	WaitGroup *sync.WaitGroup
-	Name      string   `yaml:"PETER" required:"true"`
-	Tenants   []string `yaml:"TENANTS"`
+	callbackCounter *atomic.Int32
+	Name            string   `yaml:"PETER" required:"true"`
+	Tenants         []string `yaml:"TENANTS"`
 }
 
 type Config struct {
@@ -168,7 +168,7 @@ type Config struct {
 }
 
 func (m MightyConfig) OnChange() {
-	m.WaitGroup.Done()
+	m.callbackCounter.Add(1)
 }
 
 func (m MightyConfig) OnError(err error) {
@@ -180,7 +180,7 @@ func Test_Filewatcher(t *testing.T) {
 
 	config := Config{
 		MightyConfig: MightyConfig{
-			WaitGroup: new(sync.WaitGroup),
+			callbackCounter: new(atomic.Int32),
 		},
 	}
 
@@ -205,8 +205,6 @@ func Test_Filewatcher(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	config.MightyConfig.WaitGroup.Add(1)
-
 	if err := os.WriteFile(
 		"test.yaml",
 		[]byte(fmt.Sprintf("%s: %s", "PETER", "PANUS")),
@@ -215,7 +213,9 @@ func Test_Filewatcher(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	config.MightyConfig.WaitGroup.Wait()
+	for config.MightyConfig.callbackCounter.Load() < 1 {
+		// wait for the callback
+	}
 
 	if config.MightyConfig.Name != "PANUS" {
 		t.Fatal("expected PANUS")
