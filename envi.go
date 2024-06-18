@@ -40,12 +40,20 @@ type fileWatcherInstance struct {
 
 // Envi holds references to all active file watchers.
 type Envi struct {
+	errorChan    chan error
 	fileWatchers map[string]fileWatcherInstance
+}
+
+// Errors returns an error channel where filewatcher errors are sent to.
+func (e *Envi) Errors() <-chan error {
+	return e.errorChan
 }
 
 // Close closes all file watchers attached to the Envi instance.
 func (e *Envi) Close() error {
 	var errs []error
+
+	close(e.errorChan)
 
 	for filePath, instance := range e.fileWatchers {
 		instance.cancel()
@@ -65,6 +73,7 @@ func (e *Envi) Close() error {
 // New creates a new Envi instance.
 func New() *Envi {
 	return &Envi{
+		errorChan:    make(chan error, 100),
 		fileWatchers: make(map[string]fileWatcherInstance, 0),
 	}
 }
@@ -403,6 +412,8 @@ func (e *Envi) fileWatcher(
 	filePath string,
 	unmarshal func([]byte, any) error,
 ) {
+	const errMsg = "error reloading watched file: %w"
+
 	callback, ok := field.Addr().Interface().(FileWatcher)
 	if !ok {
 		return
@@ -429,7 +440,14 @@ func (e *Envi) fileWatcher(
 
 				err := loadFile(field, filePath, unmarshal)
 				if err != nil {
-					callback.OnError(fmt.Errorf("error reloading watched file: %w", err))
+					wrappedErr := fmt.Errorf(errMsg, err)
+					callback.OnError(wrappedErr)
+
+					select {
+					case e.errorChan <- wrappedErr: // send the error to the channel if there's space
+					default:
+						// drop the error if the channel is full
+					}
 
 					continue
 				}
@@ -443,7 +461,14 @@ func (e *Envi) fileWatcher(
 				return
 			}
 
-			callback.OnError(fmt.Errorf("error while watching file: %w", err))
+			wrappedErr := fmt.Errorf(errMsg, err)
+			callback.OnError(wrappedErr)
+
+			select {
+			case e.errorChan <- wrappedErr: // send the error to the channel if there's space
+			default:
+				// drop the error if the channel is full
+			}
 		}
 	}
 }
