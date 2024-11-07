@@ -205,6 +205,11 @@ func Test_Filewatcher(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	err = enviClient.StartWatching()
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	if err := os.WriteFile(
 		"test.yaml",
 		[]byte(fmt.Sprintf("%s: %s", "PETER", "PANUS")),
