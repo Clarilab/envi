@@ -34,14 +34,24 @@ type FileWatcher interface {
 }
 
 type fileWatcherInstance struct {
-	watcher *fsnotify.Watcher
-	cancel  context.CancelFunc
+	field     reflect.Value
+	unmarshal unmarshalFunc
+	cancel    context.CancelFunc
+	close     func() error
+}
+
+func (f *fileWatcherInstance) setCancel(cancel context.CancelFunc) {
+	f.cancel = cancel
+}
+
+func (f *fileWatcherInstance) setClose(close func() error) {
+	f.close = close
 }
 
 // Envi holds references to all active file watchers.
 type Envi struct {
 	errorChan    chan error
-	fileWatchers map[string]fileWatcherInstance
+	fileWatchers map[string]*fileWatcherInstance
 }
 
 // Errors returns an error channel where filewatcher errors are sent to.
@@ -58,7 +68,7 @@ func (e *Envi) Close() error {
 	for filePath, instance := range e.fileWatchers {
 		instance.cancel()
 
-		if err := instance.watcher.Close(); err != nil {
+		if err := instance.close(); err != nil {
 			errs = append(errs, fmt.Errorf("failed to close watcher for file %s with error: %w", filePath, err))
 		}
 	}
@@ -74,7 +84,7 @@ func (e *Envi) Close() error {
 func New() *Envi {
 	return &Envi{
 		errorChan:    make(chan error, 100),
-		fileWatchers: make(map[string]fileWatcherInstance, 0),
+		fileWatchers: make(map[string]*fileWatcherInstance, 0),
 	}
 }
 
@@ -213,10 +223,7 @@ func (e *Envi) loadConfig(config any) error {
 			}
 
 			if watchTag == "true" {
-				err = e.watchFile(field, path, unmarshalFunc)
-				if err != nil {
-					return fmt.Errorf(errMsg, err)
-				}
+				e.addFileWatcher(field, path, unmarshalFunc)
 			}
 		case reflect.String:
 			tagVal := getStructTag(t.Field(i), tagEnv)
@@ -232,6 +239,19 @@ func (e *Envi) loadConfig(config any) error {
 				Expected:  "string, struct",
 				Got:       field.Kind().String(),
 			})
+		}
+	}
+
+	return nil
+}
+
+// StartWatching starts watching all files with enabled file watching.
+func (e *Envi) StartWatching() error {
+	const errMsg = "error while starting file watching: %w"
+
+	for path, watcher := range e.fileWatchers {
+		if err := e.watchFile(watcher, path); err != nil {
+			return fmt.Errorf(errMsg, err)
 		}
 	}
 
@@ -330,8 +350,15 @@ func handleDefaults(field reflect.Value) error {
 	return nil
 }
 
-func (e *Envi) watchFile(field reflect.Value, path string, unmarshal unmarshalFunc) error {
-	const errMsg = "error while watching file: %w"
+func (e *Envi) addFileWatcher(field reflect.Value, path string, unmarshal unmarshalFunc) {
+	e.fileWatchers[path] = &fileWatcherInstance{
+		field:     field,
+		unmarshal: unmarshal,
+	}
+}
+
+func (e *Envi) watchFile(instance *fileWatcherInstance, path string) error {
+	const errMsg = "error while starting file watcher: %w"
 
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
@@ -340,12 +367,10 @@ func (e *Envi) watchFile(field reflect.Value, path string, unmarshal unmarshalFu
 
 	ctx, cancel := context.WithCancel(context.Background())
 
-	e.fileWatchers[path] = fileWatcherInstance{
-		watcher: watcher,
-		cancel:  cancel,
-	}
+	instance.setCancel(cancel)
+	instance.setClose(watcher.Close)
 
-	go e.fileWatcher(ctx, watcher, field, path, unmarshal)
+	go e.fileWatcher(ctx, watcher, instance.field, path, instance.unmarshal)
 
 	err = watcher.Add(filepath.Dir(path)) // needs to be the directory of the file to ensure working on linux systems
 	if err != nil {
@@ -356,6 +381,7 @@ func (e *Envi) watchFile(field reflect.Value, path string, unmarshal unmarshalFu
 
 	return nil
 }
+
 func validate(e any) []error {
 	v := reflect.ValueOf(e)
 	t := reflect.TypeOf(e)

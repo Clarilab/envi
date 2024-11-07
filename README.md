@@ -3,13 +3,13 @@
 ## Installation
 
 ```shell
-go get github.com/Clarilab/envi/v3
+go get github.com/Clarilab/envi/v4
 ```
 
 ## Importing
 
 ```go
-import "github.com/Clarilab/envi/v3"
+import "github.com/Clarilab/envi/v4"
 ```
 
 ## Usage
@@ -91,7 +91,7 @@ Load loads all config files and environment variables into the input struct.
 Supported types are JSON, YAML and text files, as well as strings on the struct root level.
 
 If you want to watch a file for changes, the "watch" tag has to be set to true and the underlying struct
-has to implement the envi.FileWatcher interface.
+has to implement the envi.FileWatcher interface. To actually start watching the files, the StartWatching() method must be called.
 
 While using the "default" tag, the "env" tag can be omitted. If not omitted, the value from the
 environment variable will be used.
