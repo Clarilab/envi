@@ -3,13 +3,13 @@
 ## Installation
 
 ```shell
-go get github.com/Clarilab/envi/v3
+go get github.com/Clarilab/envi/v4
 ```
 
 ## Importing
 
 ```go
-import "github.com/Clarilab/envi/v3"
+import "github.com/Clarilab/envi/v4"
 ```
 
 ## Usage

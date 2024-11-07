@@ -7,7 +7,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/Clarilab/envi/v3"
+	"github.com/Clarilab/envi/v4"
 )
 
 // !!! Attention: The tests in this file are not meant to be run in parallel because of the t.Setenv usage !!!

@@ -1,4 +1,4 @@
-module github.com/Clarilab/envi/v3
+module github.com/Clarilab/envi/v4
 
 go 1.22
 
