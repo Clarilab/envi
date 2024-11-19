@@ -3,6 +3,7 @@ package envi
 import (
 	"cmp"
 	"context"
+	"crypto/md5"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -35,6 +36,7 @@ type FileWatcher interface {
 
 type fileWatcherInstance struct {
 	watcher *fsnotify.Watcher
+	ctx     context.Context
 	cancel  context.CancelFunc
 }
 
@@ -42,6 +44,7 @@ type fileWatcherInstance struct {
 type Envi struct {
 	errorChan    chan error
 	fileWatchers map[string]fileWatcherInstance
+	fileHashes   map[string]string
 }
 
 // Errors returns an error channel where filewatcher errors are sent to.
@@ -75,6 +78,7 @@ func New() *Envi {
 	return &Envi{
 		errorChan:    make(chan error, 100),
 		fileWatchers: make(map[string]fileWatcherInstance, 0),
+		fileHashes:   make(map[string]string),
 	}
 }
 
@@ -207,7 +211,7 @@ func (e *Envi) loadConfig(config any) error {
 				return fmt.Errorf(errMsg, &InvalidTagError{Tag: "type"})
 			}
 
-			err = loadFile(field, path, unmarshalFunc)
+			_, err = e.loadFile(field, path, unmarshalFunc)
 			if err != nil {
 				return fmt.Errorf(errMsg, err)
 			}
@@ -261,25 +265,33 @@ func unmarshalText(data []byte, v any) error {
 	return nil
 }
 
-func loadFile(field reflect.Value, path string, unmarshal unmarshalFunc) error {
+// loadFile loads the file at path, checks if it is different from the already loaded file if exists, and unmarshals into the config value.
+func (e *Envi) loadFile(field reflect.Value, path string, unmarshal unmarshalFunc) (bool, error) {
 	const errMsg = "error while loading file: %w"
 
 	err := handleDefaults(field)
 	if err != nil {
-		return fmt.Errorf(errMsg, err)
+		return false, fmt.Errorf(errMsg, err)
 	}
 
 	blob, err := os.ReadFile(path)
 	if err != nil {
-		return fmt.Errorf(errMsg, err)
+		return false, fmt.Errorf(errMsg, err)
+	}
+
+	newHash := fmt.Sprintf("%x", md5.Sum(blob))
+	if oldHash, ok := e.fileHashes[path]; ok && newHash == oldHash {
+		return false, nil // The file has not changed, do not run trigger
+	} else {
+		e.fileHashes[path] = newHash
 	}
 
 	err = unmarshal(blob, field.Addr().Interface())
 	if err != nil {
-		return fmt.Errorf(errMsg, err)
+		return false, fmt.Errorf(errMsg, err)
 	}
 
-	return nil
+	return true, nil
 }
 
 func handleDefaults(field reflect.Value) error {
@@ -333,29 +345,36 @@ func handleDefaults(field reflect.Value) error {
 func (e *Envi) watchFile(field reflect.Value, path string, unmarshal unmarshalFunc) error {
 	const errMsg = "error while watching file: %w"
 
-	watcher, err := fsnotify.NewWatcher()
-	if err != nil {
-		return fmt.Errorf(errMsg, err)
+	dirPath := filepath.Dir(path)
+	if _, ok := e.fileWatchers[dirPath]; !ok {
+		watcher, err := fsnotify.NewWatcher()
+		if err != nil {
+			return fmt.Errorf(errMsg, err)
+		}
+
+		ctx, cancel := context.WithCancel(context.Background())
+
+		e.fileWatchers[dirPath] = fileWatcherInstance{
+			watcher: watcher,
+			ctx:     ctx,
+			cancel:  cancel,
+		}
+
+		err = watcher.Add(dirPath) // needs to be the directory of the file to ensure working on linux systems
+		if err != nil {
+			watcher.Close()
+
+			return fmt.Errorf(errMsg, err)
+		}
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
+	fileWatcher := e.fileWatchers[dirPath]
 
-	e.fileWatchers[path] = fileWatcherInstance{
-		watcher: watcher,
-		cancel:  cancel,
-	}
-
-	go e.fileWatcher(ctx, watcher, field, path, unmarshal)
-
-	err = watcher.Add(filepath.Dir(path)) // needs to be the directory of the file to ensure working on linux systems
-	if err != nil {
-		watcher.Close()
-
-		return fmt.Errorf(errMsg, err)
-	}
+	go e.fileWatcher(fileWatcher.ctx, fileWatcher.watcher, field, path, unmarshal)
 
 	return nil
 }
+
 func validate(e any) []error {
 	v := reflect.ValueOf(e)
 	t := reflect.TypeOf(e)
@@ -438,7 +457,7 @@ func (e *Envi) fileWatcher(
 			if event.Has(fsnotify.Create) || event.Has(fsnotify.Write) {
 				mutex.Lock()
 
-				err := loadFile(field, filePath, unmarshal)
+				callOnChange, err := e.loadFile(field, filePath, unmarshal)
 				if err != nil {
 					wrappedErr := fmt.Errorf(errMsg, err)
 					callback.OnError(wrappedErr)
@@ -454,7 +473,9 @@ func (e *Envi) fileWatcher(
 
 				mutex.Unlock()
 
-				callback.OnChange()
+				if callOnChange {
+					callback.OnChange()
+				}
 			}
 		case err, ok := <-watcher.Errors:
 			if !ok {

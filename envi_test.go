@@ -16,7 +16,7 @@ func Test_DefaultTag(t *testing.T) {
 	type Config struct {
 		Peter       string `default:"PAN"`
 		Environment string `env:"ENVIRONMENT"`
-		ServiceName string `env:"SERVICE_NAME" default:"envi-test"`
+		ServiceName string `default:"envi-test" env:"SERVICE_NAME"`
 	}
 
 	testCases := map[string]struct {
@@ -158,13 +158,13 @@ func Test_RequiredTag(t *testing.T) {
 
 type MightyConfig struct {
 	callbackCounter *atomic.Int32
-	Name            string   `yaml:"PETER" required:"true"`
+	Name            string   `required:"true" yaml:"PETER"`
 	Tenants         []string `yaml:"TENANTS"`
 }
 
 type Config struct {
-	MightyConfig MightyConfig `env:"ENVI_TEST111" watch:"true" default:"./test.yaml"`
-	ServiceName  string       `env:"SERVICE_NAME" default:"envi-test"`
+	MightyConfig MightyConfig `default:"./test.yaml" env:"ENVI_TEST111" watch:"true"`
+	ServiceName  string       `default:"envi-test" env:"SERVICE_NAME"`
 }
 
 func (m MightyConfig) OnChange() {
@@ -284,7 +284,7 @@ func Test_UnexportedFields(t *testing.T) {
 		unexported  string
 		Peter       string `default:"PAN"`
 		Environment string `env:"ENVIRONMENT"`
-		ServiceName string `env:"SERVICE_NAME" default:"envi-test"`
+		ServiceName string `default:"envi-test" env:"SERVICE_NAME"`
 	}
 
 	testCases := map[string]struct {
