@@ -347,12 +347,12 @@ func (e *Envi) watchFile(field reflect.Value, path string, unmarshal unmarshalFu
 
 	dirPath := filepath.Dir(path)
 	if _, ok := e.fileWatchers[dirPath]; !ok {
-		ctx, cancel := context.WithCancel(context.Background())
-
 		watcher, err := fsnotify.NewWatcher()
 		if err != nil {
 			return fmt.Errorf(errMsg, err)
 		}
+
+		ctx, cancel := context.WithCancel(context.Background())
 
 		e.fileWatchers[dirPath] = fileWatcherInstance{
 			watcher: watcher,
