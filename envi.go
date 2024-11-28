@@ -345,32 +345,26 @@ func handleDefaults(field reflect.Value) error {
 func (e *Envi) watchFile(field reflect.Value, path string, unmarshal unmarshalFunc) error {
 	const errMsg = "error while watching file: %w"
 
-	dirPath := filepath.Dir(path)
-	if _, ok := e.fileWatchers[dirPath]; !ok {
-		watcher, err := fsnotify.NewWatcher()
-		if err != nil {
-			return fmt.Errorf(errMsg, err)
-		}
-
-		ctx, cancel := context.WithCancel(context.Background())
-
-		e.fileWatchers[dirPath] = fileWatcherInstance{
-			watcher: watcher,
-			ctx:     ctx,
-			cancel:  cancel,
-		}
-
-		err = watcher.Add(dirPath) // needs to be the directory of the file to ensure working on linux systems
-		if err != nil {
-			watcher.Close()
-
-			return fmt.Errorf(errMsg, err)
-		}
+	watcher, err := fsnotify.NewWatcher()
+	if err != nil {
+		return fmt.Errorf(errMsg, err)
 	}
 
-	fileWatcher := e.fileWatchers[dirPath]
+	ctx, cancel := context.WithCancel(context.Background())
 
-	go e.fileWatcher(fileWatcher.ctx, fileWatcher.watcher, field, path, unmarshal)
+	e.fileWatchers[path] = fileWatcherInstance{
+		watcher: watcher,
+		cancel:  cancel,
+	}
+
+	go e.fileWatcher(ctx, watcher, field, path, unmarshal)
+
+	err = watcher.Add(filepath.Dir(path)) // needs to be the directory of the file to ensure working on linux systems
+	if err != nil {
+		watcher.Close()
+
+		return fmt.Errorf(errMsg, err)
+	}
 
 	return nil
 }
