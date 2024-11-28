@@ -6,6 +6,7 @@ import (
 	"os"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/Clarilab/envi/v3"
 )
@@ -163,8 +164,9 @@ type MightyConfig struct {
 }
 
 type Config struct {
-	MightyConfig MightyConfig `default:"./test.yaml" env:"ENVI_TEST111" watch:"true"`
-	ServiceName  string       `default:"envi-test" env:"SERVICE_NAME"`
+	MightyConfig      MightyConfig `default:"./mighty-config.yaml" env:"ENVI_TEST_MIGHTY_CONFIG" watch:"true"`
+	OtherMightyConfig MightyConfig `default:"./other-mighty-config.yaml" env:"ENVI_TEST_OTHER_MIGHTY_CONFIG" watch:"true"`
+	ServiceName       string       `default:"envi-test" env:"SERVICE_NAME"`
 }
 
 func (m MightyConfig) OnChange() {
@@ -176,10 +178,14 @@ func (m MightyConfig) OnError(err error) {
 }
 
 func Test_Filewatcher(t *testing.T) {
-	t.Setenv("ENVI_TEST", "./test.yaml")
+	t.Setenv("ENVI_TEST_MIGHTY_CONFIG", "./mighty-config.yaml")
+	t.Setenv("ENVI_TEST_OTHER_MIGHTY_CONFIG", "./other-mighty-config.yaml")
 
 	config := Config{
 		MightyConfig: MightyConfig{
+			callbackCounter: new(atomic.Int32),
+		},
+		OtherMightyConfig: MightyConfig{
 			callbackCounter: new(atomic.Int32),
 		},
 	}
@@ -187,15 +193,27 @@ func Test_Filewatcher(t *testing.T) {
 	enviClient := envi.New()
 
 	if err := os.WriteFile(
-		"test.yaml",
+		"mighty-config.yaml",
 		[]byte(fmt.Sprintf("%s: %s", "PETER", "PAN")),
 		0o664,
 	); err != nil {
 		t.Fatal(err)
 	}
 
+	if err := os.WriteFile(
+		"other-mighty-config.yaml",
+		[]byte(fmt.Sprintf("%s: %s", "PETER", "OTHER_PAN")),
+		0o664,
+	); err != nil {
+		t.Fatal(err)
+	}
+
 	t.Cleanup(func() {
-		if err := os.Remove("test.yaml"); err != nil {
+		if err := os.Remove("mighty-config.yaml"); err != nil {
+			t.Fatal(err)
+		}
+
+		if err := os.Remove("other-mighty-config.yaml"); err != nil {
 			t.Fatal(err)
 		}
 	})
@@ -205,20 +223,40 @@ func Test_Filewatcher(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := os.WriteFile(
-		"test.yaml",
-		[]byte(fmt.Sprintf("%s: %s", "PETER", "PANUS")),
-		0o664,
-	); err != nil {
-		t.Fatal(err)
+	for i := range 100 {
+		if err := os.WriteFile(
+			"mighty-config.yaml",
+			[]byte(fmt.Sprintf("%s: %s%d", "PETER", "PANUS", i)),
+			0o664,
+		); err != nil {
+			t.Fatal(err)
+		}
+
+		time.Sleep(50 * time.Millisecond)
 	}
 
-	for config.MightyConfig.callbackCounter.Load() < 1 {
+	for i := range 100 {
+		if err := os.WriteFile(
+			"other-mighty-config.yaml",
+			[]byte(fmt.Sprintf("%s: %s%d", "PETER", "OTHER_PANUS", i)),
+			0o664,
+		); err != nil {
+			t.Fatal(err)
+		}
+
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	for config.MightyConfig.callbackCounter.Load() < 100 && config.OtherMightyConfig.callbackCounter.Load() < 100 {
 		// wait for the callback
 	}
 
-	if config.MightyConfig.Name != "PANUS" {
-		t.Fatal("expected PANUS")
+	if config.MightyConfig.Name != "PANUS99" {
+		t.Fatal("expected PANUS99")
+	}
+
+	if config.OtherMightyConfig.Name != "OTHER_PANUS99" {
+		t.Fatal("expected OTHER_PANUS99")
 	}
 
 	err = enviClient.Close()
