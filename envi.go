@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/fsnotify/fsnotify"
 	"gopkg.in/yaml.v3"
@@ -345,6 +346,11 @@ func handleDefaults(field reflect.Value) error {
 func (e *Envi) watchFile(field reflect.Value, path string, unmarshal unmarshalFunc) error {
 	const errMsg = "error while watching file: %w"
 
+	if os.Getenv("ENVIRONMENT") == "local" {
+		go e.localFileWatcher(field, path, unmarshal)
+		return nil
+	}
+
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
 		return fmt.Errorf(errMsg, err)
@@ -484,6 +490,43 @@ func (e *Envi) fileWatcher(
 			default:
 				// drop the error if the channel is full
 			}
+		}
+	}
+}
+
+func (e *Envi) localFileWatcher(field reflect.Value, filePath string, unmarshal func([]byte, any) error) {
+	const errMsg = "error reloading watched file: %w"
+
+	callback, ok := field.Addr().Interface().(FileWatcher)
+	if !ok {
+		return
+	}
+
+	mutex := new(sync.Mutex)
+
+	ticker := time.Tick(time.Second * 5)
+	for {
+		<-ticker
+		mutex.Lock()
+
+		callOnChange, err := e.loadFile(field, filePath, unmarshal)
+		if err != nil {
+			wrappedErr := fmt.Errorf(errMsg, err)
+			callback.OnError(wrappedErr)
+
+			select {
+			case e.errorChan <- wrappedErr: // send the error to the channel if there's space
+			default:
+				// drop the error if the channel is full
+			}
+
+			continue
+		}
+
+		mutex.Unlock()
+
+		if callOnChange {
+			callback.OnChange()
 		}
 	}
 }
